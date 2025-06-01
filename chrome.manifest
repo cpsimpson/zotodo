@@ -1,5 +1,3 @@
 content	zotodo				content/
 locale	zotodo	en-US		locale/en-US/
 skin	zotodo	default		skin/
-
-overlay	chrome://zotero/content/zoteroPane.xul	chrome://zotodo/content/overlay.xul
