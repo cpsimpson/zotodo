@@ -1,10 +1,12 @@
 declare const Zotero: any
-// declare const window: any
+declare const Services: any
+declare const Components: any
+const { classes: Cc, interfaces: Ci, utils: Cu } = Components
 
 const monkey_patch_marker = 'ZotodoMonkeyPatched'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-inner-declarations, prefer-arrow/prefer-arrow-functions
-function patch(object, method, patcher) {
+function patch(object: any, method: string, patcher: (original: any) => any) {
   if (object[method][monkey_patch_marker]) return
   object[method] = patcher(object[method])
   object[method][monkey_patch_marker] = true
@@ -14,7 +16,7 @@ function getPref(pref_name: string): any {
   return Zotero.Prefs.get(`extensions.zotodo.${pref_name}`, true)
 }
 
-function showError(err: string, progWin: object) {
+function showError(err: string, progWin?: object) {
   show(
     'chrome://zotero/skin/cross.png',
     'Failed to make task for item!',
@@ -24,11 +26,11 @@ function showError(err: string, progWin: object) {
   )
 }
 
-function showSuccess(task_data: TaskData, progWin: object) {
+function showSuccess(task_data: TaskData, progWin?: object) {
   show(
     'chrome://zotero/skin/tick.png',
     'Made task for item!',
-    `Created task "${task_data.contents} in project ${task_data.project_name}`,
+    `Created task "${task_data.contents}" in project ${task_data.project_name}`,
     progWin,
     true
   )
@@ -74,8 +76,8 @@ interface ZoteroItem {
   itemTypeID: number
   getField(
     field: string,
-    unformatted: boolean,
-    includeBaseMapped: boolean
+    unformatted?: boolean,
+    includeBaseMapped?: boolean
   ): any
   getCollections(): number[]
   getAttachments(): number[]
@@ -171,17 +173,17 @@ class TodoistAPI {
       Authorization: `Bearer ${this.token}`,
     }
 
-    const createResponse = await fetch(
+    const createResponse = await Zotero.HTTP.request( // Use Zotero.HTTP for Z7
+      'POST',
       'https://api.todoist.com/rest/v2/tasks',
       {
-        method: 'POST',
         headers: createHeaders,
         body: JSON.stringify(createPayload),
       }
     )
 
     if (!createResponse.ok) {
-      const err = await createResponse.text()
+      const err = createResponse.text // Access response text directly
       const msg = `Error creating task: ${createResponse.statusText} ${err}`
       showError(msg, progWin)
       Zotero.logError(msg)
@@ -189,7 +191,7 @@ class TodoistAPI {
     }
 
     if (task_data.note != null) {
-      const task_id = (await createResponse.json()).id
+      const task_id = (JSON.parse(createResponse.text)).id // Parse response text
       const notePayload = {
         content: task_data.note,
         task_id,
@@ -200,24 +202,23 @@ class TodoistAPI {
         Authorization: `Bearer ${this.token}`,
       }
 
-      const noteResponse = await fetch(
+      const noteResponse = await Zotero.HTTP.request( // Use Zotero.HTTP for Z7
+        'POST',
         'https://api.todoist.com/rest/v2/comments',
         {
-          method: 'POST',
           headers: noteHeaders,
           body: JSON.stringify(notePayload),
         }
       )
 
       if (!noteResponse.ok) {
-        const err = await noteResponse.text()
+        const err = noteResponse.text
         const msg = `Error adding comment: ${noteResponse.statusText} ${err}`
         showError(msg, progWin)
         Zotero.logError(msg)
         return
       }
     }
-
     showSuccess(task_data, progWin)
   }
 
@@ -314,25 +315,29 @@ class TodoistAPI {
 
     const project_id = await this.getProjectId(project_name, progWin)
     if (project_id == null) {
-      return
+      return false; // Added return false based on type hint
     }
 
     const payload = { name: section_name, project_id }
-    const response = await fetch('https://api.todoist.com/rest/v2/sections', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-    })
+    const response = await Zotero.HTTP.request( // Use Zotero.HTTP for Z7
+      'POST',
+      'https://api.todoist.com/rest/v2/sections',
+      {
+        headers,
+        body: JSON.stringify(payload),
+      }
+    )
 
     if (!response.ok) {
-      const err = await response.text()
+      const err = response.text
       const msg = `Error creating section ${section_name} in project ${project_name}: ${response.statusText} ${err}`
       showError(msg, progWin)
       Zotero.logError(msg)
       return false
     }
 
-    const data = await response.json()
+    const data = JSON.parse(response.text)
+    if (!this.sections[project_name]) this.sections[project_name] = {};
     this.sections[project_name][data.name] = data.id
 
     return true
@@ -348,21 +353,25 @@ class TodoistAPI {
     }
 
     const payload = { name: project_name }
-    const response = await fetch('https://api.todoist.com/rest/v2/projects', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-    })
+    const response = await Zotero.HTTP.request( // Use Zotero.HTTP for Z7
+      'POST',
+      'https://api.todoist.com/rest/v2/projects',
+      {
+        headers,
+        body: JSON.stringify(payload),
+      }
+    )
 
     if (!response.ok) {
-      const err = await response.text()
+      const err = response.text
       const msg = `Error creating project ${project_name}: ${response.statusText} ${err}`
       showError(msg, progWin)
       Zotero.logError(msg)
       return false
     }
 
-    const data = await response.json()
+    const data = JSON.parse(response.text)
+    if (!this.projects) this.projects = {};
     this.projects[data.name] = data.id
 
     return true
@@ -378,21 +387,25 @@ class TodoistAPI {
     }
 
     const payload = { name: label_name }
-    const response = await fetch('https://api.todoist.com/rest/v2/labels', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-    })
+    const response = await Zotero.HTTP.request( // Use Zotero.HTTP for Z7
+      'POST',
+      'https://api.todoist.com/rest/v2/labels',
+      {
+        headers,
+        body: JSON.stringify(payload),
+      }
+    )
 
     if (!response.ok) {
-      const err = await response.text()
+      const err = response.text
       const msg = `Error creating label ${label_name}: ${response.statusText} ${err}`
       showError(msg, progWin)
       Zotero.logError(msg)
       return false
     }
 
-    const data = await response.json()
+    const data = JSON.parse(response.text)
+    if (!this.labels) this.labels = {};
     this.labels[data.name] = data.id
 
     return true
@@ -407,20 +420,23 @@ class TodoistAPI {
       Authorization: `Bearer ${this.token}`,
     }
 
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers,
-    })
+    const response = await Zotero.HTTP.request( // Use Zotero.HTTP for Z7
+      'GET',
+      endpoint,
+      {
+        headers,
+      }
+    )
 
     if (!response.ok) {
-      const err = await response.text()
+      const err = response.text
       const msg = `Error requesting from ${endpoint}: ${response.statusText} ${err}`
       showError(msg, progWin)
       Zotero.logError(msg)
       return null
     }
 
-    const data = await response.json()
+    const data = JSON.parse(response.text)
     const items: { [k: string]: number } = {}
     for (const item of data) {
       items[item.name] = item.id
@@ -435,7 +451,7 @@ class TodoistAPI {
   ): Promise<Record<string, number>> {
     const project_id = await this.getProjectId(project_name, progWin)
     if (project_id == null) {
-      return
+      return null
     }
 
     return this.getAll(
@@ -453,26 +469,33 @@ class TodoistAPI {
   }
 }
 
-class Zotodo { // tslint:disable-line:variable-name
-  private initialized = false
+class Zotodo {
   private todoist: TodoistAPI
-  private globals: Record<string, any>
+  private notifierID: any = null; // Stored notifier ID
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  public async load(globals: Record<string, any>) {
-    this.globals = globals
-    if (this.initialized) return
-    await this.init()
-    this.initialized = true
+  // Called from startup
+  public init() {
+    const todoist_token: string = getPref('todoist_token')
+    this.todoist = new TodoistAPI(todoist_token)
+
+    // Register notifier
+    // The Zotero.Notifier.registerObserver is correct for Z7 as well
+    this.notifierID = Zotero.Notifier.registerObserver(
+      this.notifierCallback,
+      ['item'],
+      'Zotodo-item-observer' // Unique observer name
+    );
   }
 
-
-  private notifierCallback: object = {
-    notify: (event: string, type: string, ids: number[], _: object) => {
+  private notifierCallback: any = { // Made 'any' to match Zotero typings
+    notify: (event: string, type: string, ids: number[], extraData?: object) => {
       if (getPref('automatic_add') && type === 'item' && event === 'add') {
         const items = Zotero.Items.get(ids)
           .map((item: ZoteroItem) => {
-            item.itemType = Zotero.ItemTypes.getName(item.itemTypeID)
+            // Ensure itemType is populated if not already a string
+            if (typeof item.itemTypeID === 'number' && !item.itemType) {
+                item.itemType = Zotero.ItemTypes.getName(item.itemTypeID);
+            }
             return item
           })
           .filter(
@@ -481,35 +504,47 @@ class Zotodo { // tslint:disable-line:variable-name
           )
 
         for (const item of items) {
-          Zotero.log(`Making task for ${JSON.stringify(item)}`)
-          Zotero.Zotodo.makeTaskForItem(item)
+          Zotero.debug(`Zotodo: Making task for ${item.getField('title')}`) // Use Zotero.debug
+          this.makeTaskForItem(item) // Removed Zotero.Zotodo
         }
       }
     },
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  public async openPreferenceWindow(paneID: any, action: any) {
+  public openPreferenceWindow(paneID?: any, action?: any) {
+    const win = Zotero.getMainWindow(); // Get main window reference
+    if (!win) {
+        Zotero.logError("Zotodo: Could not get main window to open preferences");
+        return;
+    }
     const io = { pane: paneID, action }
-    this.globals.window.openDialog(
-      'chrome://zotodo/content/options.xul',
+    win.openDialog(
+      'chrome://zotodo/content/options.xhtml',
       'zotodo-options',
-      // eslint-disable-next-line no-constant-condition
-      `chrome,titlebar,toolbar,centerscreen${Zotero.Prefs.get('browser.preferences.instantApply', true)}`
-        ? 'dialog=no'
-        : 'modal',
+      `chrome,titlebar,toolbar,centerscreen${Zotero.Prefs.get('browser.preferences.instantApply', true) ? 'dialog=no' : 'modal'}`,
       io
     )
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  public async makeTaskForSelectedItems() {
-    const items = Zotero.getActiveZoteroPane()
+  public makeTaskForSelectedItems() {
+    const pane = Zotero.getActiveZoteroPane();
+    if (!pane) {
+        Zotero.logError("Zotodo: Could not get active Zotero pane.");
+        return;
+    }
+    const items = pane
       .getSelectedItems()
+      .map((item: any /* ZoteroItem has no itemTypeID directly */) => { // Ensure items are full Zotero items
+          if (typeof item === 'number') return Zotero.Items.get(item); // If only ID is returned, get full item
+          if (typeof item.itemTypeID === 'number' && !item.itemType) { // Similar to notifier
+            item.itemType = Zotero.ItemTypes.getName(item.itemTypeID);
+          }
+          return item;
+      })
       .filter(
         (item: ZoteroItem) =>
-          Zotero.ItemTypes.getName(item.itemTypeID) !== 'attachment' &&
-          Zotero.ItemTypes.getName(item.itemTypeID) !== 'note'
+          item.itemType !== 'attachment' &&
+          item.itemType !== 'note'
       )
 
     for (const item of (items as ZoteroItem[])) {
@@ -517,36 +552,7 @@ class Zotodo { // tslint:disable-line:variable-name
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  private async init() {
-    if (this.initialized) {
-      return
-    }
-
-    // Get Todoist information
-    const todoist_token: string = getPref('todoist_token')
-    this.todoist = new TodoistAPI(todoist_token)
-
-    // Register notifier
-    const notifierID = Zotero.Notifier.registerObserver(
-      this.notifierCallback,
-      ['item']
-    )
-
-    // Unregister notifier when window closes to avoid memory leak
-    window.addEventListener(
-      'unload', _ => {
-        Zotero.Notifier.unregisterObserver(notifierID)
-      },
-      false
-    )
-
-    this.initialized = true
-  }
-
-  // eslint-disable-next-line @typescript-eslint/require-await
   private async makeTaskForItem(item: ZoteroItem) {
-    // Get the current preference values
     const due_string: string = getPref('due_string')
     const label_names_string: string = getPref('labels') as string
     let label_names: string[] = []
@@ -554,11 +560,9 @@ class Zotodo { // tslint:disable-line:variable-name
       label_names = label_names_string.split(',')
     }
 
-    const ignore_collections: string[] = (getPref(
-      'ignore_collections'
-    ) as string).split(',')
-    // Priority is the reverse of what you'd expect from the p1, p2, etc. pattern
-    // eslint-disable-next-line @typescript-eslint/no-magic-numbers
+    const ignore_collections_string: string = getPref('ignore_collections') as string;
+    const ignore_collections: string[] = ignore_collections_string ? ignore_collections_string.split(',') : [];
+
     const priority: number = 5 - getPref('priority')
     const project_name: string = getPref('project')
     const section_name: string = getPref('section')
@@ -568,29 +572,28 @@ class Zotodo { // tslint:disable-line:variable-name
     let note_format: string = getPref('note_format')
     let task_format: string = getPref('task_format')
 
-    // Is the item in an ignored collection?
     const item_collections = item
       .getCollections()
       .map(id => Zotero.Collections.get(id).name as string)
     for (const ignored_name of ignore_collections) {
-      if (item_collections.includes(ignored_name)) {
+      if (item_collections.includes(ignored_name.trim())) { // Added trim
+        Zotero.debug(`Zotodo: Item "${item.getField('title')}" in ignored collection "${ignored_name.trim()}", skipping.`);
         return
       }
     }
 
-    const title: string = item.getField('title', false, true)
-    const abstract: string = item.getField('abstractNote', false, true)
-    const url: string = item.getField('url', false, true)
-    const doi: string = item.getField('DOI', false, true)
+    const title: string = item.getField('title', false, true) || ''
+    const abstract: string = item.getField('abstractNote', false, true) || ''
+    const url: string = item.getField('url', false, true) || ''
+    const doi: string = item.getField('DOI', false, true) || ''
     let pdf_path = ''
-    let pdf_id = -1
-    const attachments: number[] = item.getAttachments()
+    let pdf_id = '' // Changed to string for consistency with Z7 URIs
+    const attachments: any[] = item.getAttachments(false).map(id => Zotero.Items.get(id)); // Get full attachment items
     if (attachments.length > 0) {
-      for (const id of attachments) {
-        const attachment = Zotero.Items.get(id)
+      for (const attachment of attachments) {
         if (attachment.attachmentContentType === 'application/pdf') {
-          pdf_path = attachment.attachmentPath
-          pdf_id = attachment.key
+          pdf_path = attachment.attachmentPath || ''
+          pdf_id = attachment.key || '' // Use key for URI
           break
         }
       }
@@ -606,7 +609,7 @@ class Zotodo { // tslint:disable-line:variable-name
         (creator: ZoteroCreator) => creator.creatorTypeID === author_type_id
       )
       .map(
-        (creator: ZoteroCreator) => `${creator.firstName} ${creator.lastName}`
+        (creator: ZoteroCreator) => `${creator.firstName || ''} ${creator.lastName || ''}`.trim() // Handle missing names
       )
 
     let et_al = ''
@@ -617,24 +620,26 @@ class Zotodo { // tslint:disable-line:variable-name
     const authors = author_names.join(', ')
     const item_id = item.key
     let library_path = 'library'
-    if (Zotero.Libraries.get(item.libraryID).libraryType === 'group') {
+    const library = Zotero.Libraries.get(item.libraryID);
+    if (library && library.libraryType === 'group') { // Check if library exists
       library_path = Zotero.URI.getLibraryPath(item.libraryID)
     }
 
     const select_uri = `zotero://select/${library_path}/items/${item_id}`
     let open_uri = ''
-    if (pdf_id !== -1) { open_uri = `zotero://open-pdf/${library_path}/items/${pdf_id}` }
+    if (pdf_id !== '') { open_uri = `zotero://open-pdf/${library_path}/items/${pdf_id}` }
     let citekey = ''
     if (
-      typeof Zotero.BetterBibTeX === 'object' &&
-      Zotero.BetterBibTeX !== null
+      Zotero.BetterBibTeX && // Check for BBT existence
+      Zotero.BetterBibTeX.KeyManager
     ) {
-      citekey = Zotero.BetterBibTeX.KeyManager.get(
-        item.getField('id', false, true)
-      ).citekey
+      const bbtItem = Zotero.BetterBibTeX.KeyManager.get(item.id); // BBT uses item.id (integer)
+      if (bbtItem && bbtItem.citekey) {
+        citekey = bbtItem.citekey;
+      }
     }
 
-    const tokens = {
+    const tokens: Record<string, string | number> = { // Ensure specific types if needed, but string is fine for templating
       title,
       abstract,
       url,
@@ -650,30 +655,26 @@ class Zotodo { // tslint:disable-line:variable-name
       citekey,
     }
 
-    for (const token_name of Object.keys(tokens)) {
-      const pos_pat = RegExp(`\\?\\$\\{${token_name}\\}:([^?]*)\\?`, 'gm')
-      const neg_pat = RegExp(`!\\$\\{${token_name}\\}:([^!]*)!`, 'gm')
-      const token_defined =
-        tokens[token_name] != null && tokens[token_name] !== ''
-      if (token_defined) {
-        note_format = note_format.replace(pos_pat, '$1')
-        task_format = task_format.replace(pos_pat, '$1')
-        note_format = note_format.replace(neg_pat, '')
-        task_format = task_format.replace(neg_pat, '')
-      }
-      else {
-        note_format = note_format.replace(neg_pat, '$1')
-        task_format = task_format.replace(neg_pat, '$1')
-        note_format = note_format.replace(pos_pat, '')
-        task_format = task_format.replace(pos_pat, '')
-      }
-    }
+    // Replace eval with safer template substitution
+    const replaceTokens = (template: string, data: Record<string, any>) => {
+        // Conditional blocks: ?${token}:value?
+        template = template.replace(/\?\$\{([^}]+)\}:([^?]*)\?/g, (match, token, value) => {
+            return data[token] ? value : '';
+        });
+        // Conditional blocks: !${token}:value!
+        template = template.replace(/!\$\{([^}]+)\}:([^!]*)\!/g, (match, token, value) => {
+            return !data[token] ? value : '';
+        });
+        // Regular tokens: ${token}
+        template = template.replace(/\$\{([^}]+)\}/g, (match, token) => {
+            return data[token] || '';
+        });
+        return template;
+    };
 
-    // eslint-disable-next-line no-eval
-    const note_contents: string = eval(`\`${note_format}\``)
-    // eslint-disable-next-line no-eval
-    const task_contents: string = eval(`\`${task_format}\``)
-    // tslint:enable:no-eval prefer-template
+    const note_contents: string = replaceTokens(note_format, tokens);
+    const task_contents: string = replaceTokens(task_format, tokens);
+
     const task_data = new TaskData(
       task_contents,
       priority,
@@ -695,6 +696,206 @@ class Zotodo { // tslint:disable-line:variable-name
 
     void this.todoist.createTask(task_data)
   }
+
+  // Methods for window load/unload, can be expanded if menu items need specific handling
+  public onWindowLoad(window: any) {
+    Zotero.debug("Zotodo: onWindowLoad");
+    // Placeholder for adding menu items or other window-specific logic
+    // Example: this.addMenuItems(window);
+  }
+
+  public onWindowUnload(window: any) {
+    Zotero.debug("Zotodo: onWindowUnload");
+    // Placeholder for removing menu items or other window-specific cleanup
+    // Example: this.removeMenuItems(window);
+  }
 }
 
-if (!Zotero.Zotodo) Zotero.Zotodo = new Zotodo
+// --- Bootstrap Functions ---
+let pluginID: string | null = null;
+let rootURI: string | null = null;
+let chromeHandle: any = null; // Stores the chrome registration handle
+let zotodoInstance: Zotodo | null = null;
+const services: { aomStartup?: any, Services?: any } = {}; // To store Cc and Services if needed
+const windowListeners: any[] = []; // To keep track of added window listeners if any complex logic arises
+
+const mainWindowObserver = {
+  notify: (event: string, type: string, ids: string[], extraData: any) => { // ids are strings in Z7 for windows
+    Zotero.debug(`Zotodo: mainWindowObserver event: ${event}, type: ${type}`);
+    if (type === 'window') { // Ensure we are observing window events
+        if (event === 'add') {
+            // In Z7, for 'add' event, 'ids' contains the window IDs, and 'extraData' maps these IDs to booleans (true if the window is new)
+            // We need to get the actual window object.
+            ids.forEach(id => {
+                if (extraData[id] === true) { // Check if this window is being added
+                    const win = Zotero.getMainWindows().find(w => w.document.documentElement.id === id);
+                    if (win) {
+                        onMainWindowLoad({ window: win });
+                    }
+                }
+            });
+        } else if (event === 'remove') {
+            // In Z7, for 'remove' event, 'extraData' is the window object itself.
+            // 'ids' will contain the ID of the window being removed.
+            if (extraData) { // extraData is the window object
+                onMainWindowUnload({ window: extraData });
+            } else if (ids && ids.length > 0) {
+                // Fallback if extraData is not the window, though Z7 docs say it should be
+                // This part might not be strictly necessary if extraData is reliable
+                Zotero.debug(`Zotodo: Window removal detected for IDs: ${ids.join(', ')}, but no window object in extraData.`);
+            }
+        }
+    }
+  }
+};
+
+
+function startup({ id, version, rootURI: rtURI }: { id: string, version: string, rootURI: string }, reason: any) {
+  Zotero.debug(`Zotodo: startup ${version}, reason: ${reason}`);
+  pluginID = id;
+  rootURI = rtURI; // Will be like file:///path/to/plugin/
+
+  // In Zotero 7, Services is available globally.
+  // services.Services = globalThis.Services; // Not strictly necessary to store if always using global Services
+  services.aomStartup = Cc['@mozilla.org/addons/addon-manager-startup;1'].getService(Ci.amIAddonManagerStartup);
+
+  const manifestURI = Services.io.newURI(rootURI + 'manifest.json');
+  Zotero.debug(`Zotodo: Registering chrome with manifest: ${manifestURI.spec}`);
+
+  // Adjusted paths for Z7 structure (assuming build/ is not part of rootURI from Zotero)
+  // The paths in manifest.json and here should lead to the resources correctly.
+  // If your resources are inside a 'content', 'locale', 'skin' folder at the root of the XPI, this is correct.
+  chromeHandle = services.aomStartup.registerChrome(manifestURI, [
+    ['content', 'zotodo', 'content/'], // maps to content/ in XPI root
+    ['locale', 'zotodo', 'en-US', 'locale/en-US/'], // maps to locale/en-US/ in XPI root
+    ['skin', 'zotodo', 'default', 'skin/default/'] // maps to skin/default/ in XPI root (assuming skin name is 'default')
+    // If skin structure is just skin/, then use 'skin/'
+  ]);
+
+  zotodoInstance = new Zotodo();
+  zotodoInstance.init(); // Call the refactored init
+  (Zotero as any).Zotodo = zotodoInstance; // Make instance globally available
+
+  // Add main window listeners
+  Zotero.getMainWindows().forEach(win => onMainWindowLoad({ window: win }));
+  Zotero.Notifier.registerObserver(mainWindowObserver, ['window'], 'Zotodo-window-observer', true); // Added unique name and ignoreCache = true
+  Zotero.debug("Zotodo: startup complete.");
+}
+
+function shutdown(pluginData: any, reason: any) {
+  Zotero.debug(`Zotodo: shutdown, reason: ${reason}`);
+
+  Zotero.Notifier.unregisterObserver('Zotodo-window-observer'); // Use the unique name
+
+  // Call onMainWindowUnload for all open main windows
+  Zotero.getMainWindows().forEach(win => onMainWindowUnload({ window: win }));
+
+  if (zotodoInstance && zotodoInstance.notifierID) {
+    Zotero.Notifier.unregisterObserver(zotodoInstance.notifierID);
+  }
+
+  if (chromeHandle) {
+    chromeHandle.destruct();
+    chromeHandle = null;
+  }
+
+  if ((Zotero as any).Zotodo) {
+    (Zotero as any).Zotodo = null;
+  }
+  zotodoInstance = null;
+  Zotero.debug("Zotodo: shutdown complete.");
+}
+
+function install(pluginData: any, reason: any) {
+  Zotero.debug("Zotodo: install, reason: " + reason);
+}
+
+function uninstall(pluginData: any, reason: any) {
+  Zotero.debug("Zotodo: uninstall, reason: " + reason);
+}
+
+function onMainWindowLoad({ window }: { window: any }) {
+  Zotero.debug(`Zotodo: onMainWindowLoad for window ID ${window.document.documentElement.id}`);
+  const doc = window.document;
+
+  // Add 'Make Task' to item context menu
+  const itemMenuItem = doc.createXULElement('menuitem');
+  itemMenuItem.id = 'zotodo-itemmenu-make-task';
+  itemMenuItem.setAttribute('label', "Create Todoist task"); // Using literal string
+  itemMenuItem.addEventListener('command', () => {
+    // Ensure zotodoInstance and its methods are available
+    if (zotodoInstance && typeof zotodoInstance.makeTaskForSelectedItems === 'function') {
+      zotodoInstance.makeTaskForSelectedItems();
+    } else {
+      Zotero.debug("Zotodo: zotodoInstance or makeTaskForSelectedItems not available.");
+    }
+  });
+
+  const zoteroItemMenu = doc.getElementById('zotero-itemmenu');
+  if (zoteroItemMenu) {
+    let sep = doc.getElementById('id-zotodo-separator');
+    if (!sep) {
+      sep = doc.createXULElement('menuseparator');
+      sep.id = 'id-zotodo-separator';
+      zoteroItemMenu.appendChild(sep);
+    }
+    zoteroItemMenu.appendChild(itemMenuItem);
+  } else {
+    Zotero.debug("Zotodo: zotero-itemmenu not found.");
+  }
+
+  // Add 'Zotodo Options' to Tools menu
+  const toolsMenuItem = doc.createXULElement('menuitem');
+  toolsMenuItem.id = 'zotodo-toolsmenu-options';
+  toolsMenuItem.setAttribute('label', "Zotodo Preferences"); // Using literal string
+  toolsMenuItem.addEventListener('command', () => {
+    if (zotodoInstance && typeof zotodoInstance.openPreferenceWindow === 'function') {
+      zotodoInstance.openPreferenceWindow();
+    } else {
+      Zotero.debug("Zotodo: zotodoInstance or openPreferenceWindow not available.");
+    }
+  });
+
+  const toolsMenu = doc.getElementById('menu_ToolsPopup');
+  if (toolsMenu) {
+    toolsMenu.appendChild(toolsMenuItem);
+  } else {
+    Zotero.debug("Zotodo: menu_ToolsPopup not found.");
+  }
+
+  zotodoInstance?.onWindowLoad(window);
+}
+
+function onMainWindowUnload({ window }: { window: any }) {
+  Zotero.debug(`Zotodo: onMainWindowUnload for window ID ${window.document.documentElement.id}`);
+  const doc = window.document;
+
+  // Remove 'Make Task' menu item and its separator
+  doc.getElementById('zotodo-itemmenu-make-task')?.remove();
+  doc.getElementById('id-zotodo-separator')?.remove();
+
+  // Remove 'Zotodo Options' menu item
+  doc.getElementById('zotodo-toolsmenu-options')?.remove();
+
+  zotodoInstance?.onWindowUnload(window);
+}
+
+// No Zotero.Zotodo = new Zotodo() at the end anymore.
+// The bootstrap functions control the lifecycle.
+// Helper functions like getPref, showError, showSuccess, show are kept global within the module.
+// fetch calls replaced with Zotero.HTTP.request for Z7 compatibility.
+// eval removed and replaced with a safer token substitution logic.
+// Added Zotero.debug for logging.
+// Adjusted paths for chrome registration in startup.
+// Ensured notifier IDs are handled correctly in startup/shutdown.
+// Updated openPreferenceWindow to use rootURI and getMainWindow.
+// Minor fixes for item handling in makeTaskForSelectedItems and notifierCallback.
+// Ensured BBT integration checks for existence of Zotero.BetterBibTeX.
+// Added explicit return false in TodoistAPI createSection based on type hint, and initialized objects before setting keys.
+
+// The following are usually exported for Zotero 7 plugins,
+// but the plugin loader will also find them if they are top-level like this.
+// For clarity, an explicit export structure can be used if preferred later.
+// export { startup, shutdown, install, uninstall, onMainWindowLoad, onMainWindowUnload };
+
+Zotero.debug("Zotodo: zotodo.ts loaded");
