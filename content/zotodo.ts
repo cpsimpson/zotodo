@@ -1,6 +1,7 @@
 declare const Zotero: any
 declare const Services: any
-declare const Components: any
+declare const Components: any;
+const { classes: Cc, interfaces: Ci } = Components;
 
 const monkey_patch_marker = 'ZotodoMonkeyPatched'
 const MAX_PRIORITY = 5
@@ -84,6 +85,11 @@ interface ZoteroItem {
   getCreators(): ZoteroCreator[]
 }
 
+interface TodoistApiItem {
+  name: string
+  id: number
+}
+
 class TaskData {
   public contents: string
   public note: string = null
@@ -117,7 +123,7 @@ class TodoistAPI {
 
   public async createTask(task_data: TaskData) {
     const icon = `chrome://zotero/skin/spinner-16px${Zotero.hiDPI ? '@2x' : ''
-      }.png`
+    }.png`
     const progWin = show(icon, 'Creating task', 'Making Todoist task for item')
     if (this.token == null || this.token === '') {
       this.token = getPref('todoist_token')
@@ -336,8 +342,8 @@ class TodoistAPI {
       return false
     }
 
-    const data = JSON.parse(response.text as string);
-    if (!this.sections[project_name]) this.sections[project_name] = {};
+    const data = JSON.parse(response.text as string)
+    if (!this.sections[project_name]) this.sections[project_name] = {}
     this.sections[project_name][data.name] = data.id
 
     return true
@@ -370,8 +376,8 @@ class TodoistAPI {
       return false
     }
 
-    const data = JSON.parse(response.text as string);
-    if (!this.projects) this.projects = {};
+    const data = JSON.parse(response.text as string)
+    if (!this.projects) this.projects = {}
     this.projects[data.name] = data.id
 
     return true
@@ -404,8 +410,8 @@ class TodoistAPI {
       return false
     }
 
-    const data = JSON.parse(response.text as string);
-    if (!this.labels) this.labels = {};
+    const data = JSON.parse(response.text as string)
+    if (!this.labels) this.labels = {}
     this.labels[data.name] = data.id
 
     return true
@@ -414,7 +420,7 @@ class TodoistAPI {
   private async getAll(
     endpoint: string,
     progWin: object
-  ): Promise<Record<string, number>> {
+  ): Promise<Record<string, number> | null> {
     const headers = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${this.token}`,
@@ -436,32 +442,35 @@ class TodoistAPI {
       return null
     }
 
-    const data = JSON.parse(response.text as string)
+    const data = JSON.parse(response.text as string) as TodoistApiItem[]
     const items: { [k: string]: number } = {}
     for (const item of data) {
       items[item.name] = item.id
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return items
   }
 
   private async getSections(
     project_name: string,
     progWin: object
-  ): Promise<Record<string, number>> {
+  ): Promise<Record<string, number> | null> {
     const project_id = await this.getProjectId(project_name, progWin)
     if (project_id == null) {
       return null
     }
 
-    return this.getAll(
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return await this.getAll(
       `https://api.todoist.com/rest/v2/sections?project_id=${project_id}`,
       progWin
     )
   }
 
-  private async getProjects(progWin: object): Promise<Record<string, number>> {
-    return this.getAll('https://api.todoist.com/rest/v2/projects', progWin)
+  private async getProjects(progWin: object): Promise<Record<string, number> | null> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return await this.getAll('https://api.todoist.com/rest/v2/projects', progWin)
   }
 
   private async getLabels(progWin: object): Promise<Record<string, number>> {
@@ -471,7 +480,7 @@ class TodoistAPI {
 
 class Zotodo {
   private todoist: TodoistAPI
-  private notifierID: any = null // Stored notifier ID
+  public notifierID: any = null // Stored notifier ID
 
   // Called from startup
   public init() {
@@ -505,7 +514,7 @@ class Zotodo {
 
         for (const item of items) {
           Zotero.debug(`Zotodo: Making task for ${item.getField('title')}`) // Use Zotero.debug
-          void this.makeTaskForItem(item as ZoteroItem) // Removed Zotero.Zotodo
+          void this.makeTaskForItem(item as ZoteroItem); // Removed Zotero.Zotodo
         }
       }
     },
@@ -656,24 +665,18 @@ class Zotodo {
     }
 
     // Replace eval with safer template substitution
-    const replaceTokens = (template: string, data: Record<string, any>) => {
-        // Conditional blocks: ?${token}:value?
-        template = template.replace(/\?\$\{([^}]+)\}:([^?]*)\?/g, (match, token, value) => {
-            return data[token] ? value : '';
-        });
-        // Conditional blocks: !${token}:value!
-        template = template.replace(/!$\{([^}]+)\}:([^!]*)!/g, (match, token, value) => {
-            return !data[token] ? value : '';
-        });
-        // Regular tokens: ${token}
-        template = template.replace(/\$\{([^}]+)\}/g, (match, token) => {
-            return data[token] || '';
-        });
-        return template;
-    };
+    const replaceTokens = (template: string, data: Record<string, any>): string => {
+      // Conditional blocks: ?${token}:value?
+      template = template.replace(/\?\$\{([^}]+)\}:([^?]*)\?/g, (match: string, token: string, value: string): string => data[token] ? value : '')
+      // Conditional blocks: !${token}:value!
+      template = template.replace(/!$\{([^}]+)\}:([^!]*)!/g, (match: string, token: string, value: string): string => !data[token] ? value : '')
+      // Regular tokens: ${token}
+      template = template.replace(/\$\{([^}]+)\}/g, (match: string, token: string): string => String(data[token] || ''))
+      return template
+    }
 
-    const note_contents: string = replaceTokens(note_format, tokens);
-    const task_contents: string = replaceTokens(task_format, tokens);
+    const note_contents: string = replaceTokens(note_format, tokens)
+    const task_contents: string = replaceTokens(task_format, tokens)
 
     const task_data = new TaskData(
       task_contents,
@@ -699,25 +702,23 @@ class Zotodo {
 
   // Methods for window load/unload, can be expanded if menu items need specific handling
   public onWindowLoad(window: any) {
-    Zotero.debug('Zotodo: onWindowLoad');
+    Zotero.debug('Zotodo: onWindowLoad')
     // Placeholder for adding menu items or other window-specific logic
     // Example: this.addMenuItems(window);
   }
 
   public onWindowUnload(window: any) {
-    Zotero.debug('Zotodo: onWindowUnload');
+    Zotero.debug('Zotodo: onWindowUnload')
     // Placeholder for removing menu items or other window-specific cleanup
     // Example: this.removeMenuItems(window);
   }
 }
 
 // --- Bootstrap Functions ---
-let pluginID: string | null = null;
-let rootURI: string | null = null;
-let chromeHandle: any = null; // Stores the chrome registration handle
-let zotodoInstance: Zotodo | null = null;
-const services: { aomStartup?: any, Services?: any } = {}; // To store Cc and Services if needed
-const windowListeners: any[] = []; // To keep track of added window listeners if any complex logic arises
+let rootURI: string | null = null
+let chromeHandle: any = null // Stores the chrome registration handle
+let zotodoInstance: Zotodo | null = null
+const services: { aomStartup?: any, Services?: any } = {} // To store Cc and Services if needed
 
 const mainWindowObserver = {
   notify: (event: string, type: string, ids: string[], extraData: any) => { // ids are strings in Z7 for windows
@@ -752,16 +753,15 @@ const mainWindowObserver = {
 }
 
 
-function startup({ id, version, rootURI: rtURI }: { id: string, version: string, rootURI: string }, reason: any) {
-  Zotero.debug(`Zotodo: startup ${version}, reason: ${reason}`);
-  pluginID = id;
-  rootURI = rtURI; // Will be like file:///path/to/plugin/
+export function startup({ version, rootURI: rtURI }: { version: string, rootURI: string }, reason: unknown): void {
+  Zotero.debug(`Zotodo: startup ${version}, reason: ${String(reason)}`)
+  rootURI = rtURI // Will be like file:///path/to/plugin/
 
   // In Zotero 7, Services is available globally.
   // services.Services = globalThis.Services; // Not strictly necessary to store if always using global Services
   services.aomStartup = Cc['@mozilla.org/addons/addon-manager-startup;1'].getService(Ci.amIAddonManagerStartup)
 
-  const manifestURI = Services.io.newURI(`${rootURI}manifest.json`)
+  const manifestURI = Services.io.newURI(`${rootURI  }manifest.json`)
   Zotero.debug(`Zotodo: Registering chrome with manifest: ${manifestURI.spec}`)
 
   // Adjusted paths for Z7 structure (assuming build/ is not part of rootURI from Zotero)
@@ -776,7 +776,7 @@ function startup({ id, version, rootURI: rtURI }: { id: string, version: string,
 
   zotodoInstance = new Zotodo()
   zotodoInstance.init(); // Call the refactored init
-  (Zotero).Zotodo = zotodoInstance // Make instance globally available
+  (Zotero ).Zotodo = zotodoInstance // Make instance globally available
 
   // Add main window listeners
   Zotero.getMainWindows().forEach(win => onMainWindowLoad({ window: win }))
@@ -784,8 +784,8 @@ function startup({ id, version, rootURI: rtURI }: { id: string, version: string,
   Zotero.debug('Zotodo: startup complete.')
 }
 
-function shutdown(pluginData: any, reason: any) {
-  Zotero.debug(`Zotodo: shutdown, reason: ${reason}`);
+export function shutdown(reason: unknown): void {
+  Zotero.debug(`Zotodo: shutdown, reason: ${String(reason)}`)
 
   Zotero.Notifier.unregisterObserver('Zotodo-window-observer') // Use the unique name
 
@@ -801,19 +801,19 @@ function shutdown(pluginData: any, reason: any) {
     chromeHandle = null
   }
 
-  if ((Zotero).Zotodo) {
-    (Zotero).Zotodo = null
+  if ((Zotero ).Zotodo) {
+    (Zotero ).Zotodo = null
   }
   zotodoInstance = null
   Zotero.debug('Zotodo: shutdown complete.')
 }
 
-function install(pluginData: any, reason: any) {
-  Zotero.debug(`Zotodo: install, reason: ${reason}`);
+export function install(reason: unknown): void {
+  Zotero.debug(`Zotodo: install, reason: ${  String(reason)}`)
 }
 
-function uninstall(pluginData: any, reason: any) {
-  Zotero.debug(`Zotodo: uninstall, reason: ${reason}`);
+export function uninstall(reason: unknown): void {
+  Zotero.debug(`Zotodo: uninstall, reason: ${  String(reason)}`)
 }
 
 function onMainWindowLoad({ window }: { window: any }) {

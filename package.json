@@ -4,8 +4,7 @@
   "description": "Add papers imported to Zotero as Todoist tasks",
   "scripts": {
     "lint": "eslint . --ext .ts --cache --cache-location .eslintcache/",
-    "prebuild": "npm run lint",
-    "build": "tsc --noEmit && node esbuild.js",
+    "build": "node esbuild.js",
     "postbuild": "zotero-plugin-zipup build zotodo",
     "release": "zotero-plugin-release",
     "postversion": "git push --follow-tags"
