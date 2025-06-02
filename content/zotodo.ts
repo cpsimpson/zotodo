@@ -315,7 +315,7 @@ class TodoistAPI {
 
     const project_id = await this.getProjectId(project_name, progWin)
     if (project_id == null) {
-      return false; // Added return false based on type hint
+      return false // Added return false based on type hint
     }
 
     const payload = { name: section_name, project_id }
@@ -337,7 +337,7 @@ class TodoistAPI {
     }
 
     const data = JSON.parse(response.text)
-    if (!this.sections[project_name]) this.sections[project_name] = {};
+    if (!this.sections[project_name]) this.sections[project_name] = {}
     this.sections[project_name][data.name] = data.id
 
     return true
@@ -371,7 +371,7 @@ class TodoistAPI {
     }
 
     const data = JSON.parse(response.text)
-    if (!this.projects) this.projects = {};
+    if (!this.projects) this.projects = {}
     this.projects[data.name] = data.id
 
     return true
@@ -405,7 +405,7 @@ class TodoistAPI {
     }
 
     const data = JSON.parse(response.text)
-    if (!this.labels) this.labels = {};
+    if (!this.labels) this.labels = {}
     this.labels[data.name] = data.id
 
     return true
@@ -471,7 +471,7 @@ class TodoistAPI {
 
 class Zotodo {
   private todoist: TodoistAPI
-  private notifierID: any = null; // Stored notifier ID
+  private notifierID: any = null // Stored notifier ID
 
   // Called from startup
   public init() {
@@ -484,7 +484,7 @@ class Zotodo {
       this.notifierCallback,
       ['item'],
       'Zotodo-item-observer' // Unique observer name
-    );
+    )
   }
 
   private notifierCallback: any = { // Made 'any' to match Zotero typings
@@ -494,7 +494,7 @@ class Zotodo {
           .map((item: ZoteroItem) => {
             // Ensure itemType is populated if not already a string
             if (typeof item.itemTypeID === 'number' && !item.itemType) {
-                item.itemType = Zotero.ItemTypes.getName(item.itemTypeID);
+              item.itemType = Zotero.ItemTypes.getName(item.itemTypeID)
             }
             return item
           })
@@ -512,10 +512,10 @@ class Zotodo {
   }
 
   public openPreferenceWindow(paneID?: any, action?: any) {
-    const win = Zotero.getMainWindow(); // Get main window reference
+    const win = Zotero.getMainWindow() // Get main window reference
     if (!win) {
-        Zotero.logError("Zotodo: Could not get main window to open preferences");
-        return;
+      Zotero.logError('Zotodo: Could not get main window to open preferences')
+      return
     }
     const io = { pane: paneID, action }
     win.openDialog(
@@ -527,19 +527,19 @@ class Zotodo {
   }
 
   public makeTaskForSelectedItems() {
-    const pane = Zotero.getActiveZoteroPane();
+    const pane = Zotero.getActiveZoteroPane()
     if (!pane) {
-        Zotero.logError("Zotodo: Could not get active Zotero pane.");
-        return;
+      Zotero.logError('Zotodo: Could not get active Zotero pane.')
+      return
     }
     const items = pane
       .getSelectedItems()
       .map((item: any /* ZoteroItem has no itemTypeID directly */) => { // Ensure items are full Zotero items
-          if (typeof item === 'number') return Zotero.Items.get(item); // If only ID is returned, get full item
-          if (typeof item.itemTypeID === 'number' && !item.itemType) { // Similar to notifier
-            item.itemType = Zotero.ItemTypes.getName(item.itemTypeID);
-          }
-          return item;
+        if (typeof item === 'number') return Zotero.Items.get(item) // If only ID is returned, get full item
+        if (typeof item.itemTypeID === 'number' && !item.itemType) { // Similar to notifier
+          item.itemType = Zotero.ItemTypes.getName(item.itemTypeID)
+        }
+        return item
       })
       .filter(
         (item: ZoteroItem) =>
@@ -560,8 +560,8 @@ class Zotodo {
       label_names = label_names_string.split(',')
     }
 
-    const ignore_collections_string: string = getPref('ignore_collections') as string;
-    const ignore_collections: string[] = ignore_collections_string ? ignore_collections_string.split(',') : [];
+    const ignore_collections_string: string = getPref('ignore_collections') as string
+    const ignore_collections: string[] = ignore_collections_string ? ignore_collections_string.split(',') : []
 
     const priority: number = 5 - getPref('priority')
     const project_name: string = getPref('project')
@@ -569,15 +569,15 @@ class Zotodo {
 
     const set_due: boolean = getPref('set_due')
     const include_note: boolean = getPref('include_note')
-    let note_format: string = getPref('note_format')
-    let task_format: string = getPref('task_format')
+    const note_format: string = getPref('note_format')
+    const task_format: string = getPref('task_format')
 
     const item_collections = item
       .getCollections()
       .map(id => Zotero.Collections.get(id).name as string)
     for (const ignored_name of ignore_collections) {
       if (item_collections.includes(ignored_name.trim())) { // Added trim
-        Zotero.debug(`Zotodo: Item "${item.getField('title')}" in ignored collection "${ignored_name.trim()}", skipping.`);
+        Zotero.debug(`Zotodo: Item "${item.getField('title')}" in ignored collection "${ignored_name.trim()}", skipping.`)
         return
       }
     }
@@ -588,7 +588,7 @@ class Zotodo {
     const doi: string = item.getField('DOI', false, true) || ''
     let pdf_path = ''
     let pdf_id = '' // Changed to string for consistency with Z7 URIs
-    const attachments: any[] = item.getAttachments(false).map(id => Zotero.Items.get(id)); // Get full attachment items
+    const attachments: any[] = item.getAttachments(false).map(id => Zotero.Items.get(id)) // Get full attachment items
     if (attachments.length > 0) {
       for (const attachment of attachments) {
         if (attachment.attachmentContentType === 'application/pdf') {
@@ -620,7 +620,7 @@ class Zotodo {
     const authors = author_names.join(', ')
     const item_id = item.key
     let library_path = 'library'
-    const library = Zotero.Libraries.get(item.libraryID);
+    const library = Zotero.Libraries.get(item.libraryID)
     if (library && library.libraryType === 'group') { // Check if library exists
       library_path = Zotero.URI.getLibraryPath(item.libraryID)
     }
@@ -633,9 +633,9 @@ class Zotodo {
       Zotero.BetterBibTeX && // Check for BBT existence
       Zotero.BetterBibTeX.KeyManager
     ) {
-      const bbtItem = Zotero.BetterBibTeX.KeyManager.get(item.id); // BBT uses item.id (integer)
+      const bbtItem = Zotero.BetterBibTeX.KeyManager.get(item.id) // BBT uses item.id (integer)
       if (bbtItem && bbtItem.citekey) {
-        citekey = bbtItem.citekey;
+        citekey = bbtItem.citekey
       }
     }
 
@@ -657,23 +657,17 @@ class Zotodo {
 
     // Replace eval with safer template substitution
     const replaceTokens = (template: string, data: Record<string, any>) => {
-        // Conditional blocks: ?${token}:value?
-        template = template.replace(/\?\$\{([^}]+)\}:([^?]*)\?/g, (match, token, value) => {
-            return data[token] ? value : '';
-        });
-        // Conditional blocks: !${token}:value!
-        template = template.replace(/!\$\{([^}]+)\}:([^!]*)\!/g, (match, token, value) => {
-            return !data[token] ? value : '';
-        });
-        // Regular tokens: ${token}
-        template = template.replace(/\$\{([^}]+)\}/g, (match, token) => {
-            return data[token] || '';
-        });
-        return template;
-    };
+      // Conditional blocks: ?${token}:value?
+      template = template.replace(/\?\$\{([^}]+)\}:([^?]*)\?/g, (match, token, value) => data[token] ? value : '')
+      // Conditional blocks: !${token}:value!
+      template = template.replace(/!\$\{([^}]+)\}:([^!]*)\!/g, (match, token, value) => !data[token] ? value : '')
+      // Regular tokens: ${token}
+      template = template.replace(/\$\{([^}]+)\}/g, (match, token) => data[token] || '')
+      return template
+    }
 
-    const note_contents: string = replaceTokens(note_format, tokens);
-    const task_contents: string = replaceTokens(task_format, tokens);
+    const note_contents: string = replaceTokens(note_format, tokens)
+    const task_contents: string = replaceTokens(task_format, tokens)
 
     const task_data = new TaskData(
       task_contents,
@@ -699,68 +693,70 @@ class Zotodo {
 
   // Methods for window load/unload, can be expanded if menu items need specific handling
   public onWindowLoad(window: any) {
-    Zotero.debug("Zotodo: onWindowLoad");
+    Zotero.debug('Zotodo: onWindowLoad')
     // Placeholder for adding menu items or other window-specific logic
     // Example: this.addMenuItems(window);
   }
 
   public onWindowUnload(window: any) {
-    Zotero.debug("Zotodo: onWindowUnload");
+    Zotero.debug('Zotodo: onWindowUnload')
     // Placeholder for removing menu items or other window-specific cleanup
     // Example: this.removeMenuItems(window);
   }
 }
 
 // --- Bootstrap Functions ---
-let pluginID: string | null = null;
-let rootURI: string | null = null;
-let chromeHandle: any = null; // Stores the chrome registration handle
-let zotodoInstance: Zotodo | null = null;
-const services: { aomStartup?: any, Services?: any } = {}; // To store Cc and Services if needed
-const windowListeners: any[] = []; // To keep track of added window listeners if any complex logic arises
+let pluginID: string | null = null
+let rootURI: string | null = null
+let chromeHandle: any = null // Stores the chrome registration handle
+let zotodoInstance: Zotodo | null = null
+const services: { aomStartup?: any, Services?: any } = {} // To store Cc and Services if needed
+const windowListeners: any[] = [] // To keep track of added window listeners if any complex logic arises
 
 const mainWindowObserver = {
   notify: (event: string, type: string, ids: string[], extraData: any) => { // ids are strings in Z7 for windows
-    Zotero.debug(`Zotodo: mainWindowObserver event: ${event}, type: ${type}`);
+    Zotero.debug(`Zotodo: mainWindowObserver event: ${event}, type: ${type}`)
     if (type === 'window') { // Ensure we are observing window events
-        if (event === 'add') {
-            // In Z7, for 'add' event, 'ids' contains the window IDs, and 'extraData' maps these IDs to booleans (true if the window is new)
-            // We need to get the actual window object.
-            ids.forEach(id => {
-                if (extraData[id] === true) { // Check if this window is being added
-                    const win = Zotero.getMainWindows().find(w => w.document.documentElement.id === id);
-                    if (win) {
-                        onMainWindowLoad({ window: win });
-                    }
-                }
-            });
-        } else if (event === 'remove') {
-            // In Z7, for 'remove' event, 'extraData' is the window object itself.
-            // 'ids' will contain the ID of the window being removed.
-            if (extraData) { // extraData is the window object
-                onMainWindowUnload({ window: extraData });
-            } else if (ids && ids.length > 0) {
-                // Fallback if extraData is not the window, though Z7 docs say it should be
-                // This part might not be strictly necessary if extraData is reliable
-                Zotero.debug(`Zotodo: Window removal detected for IDs: ${ids.join(', ')}, but no window object in extraData.`);
+      if (event === 'add') {
+        // In Z7, for 'add' event, 'ids' contains the window IDs, and 'extraData' maps these IDs to booleans (true if the window is new)
+        // We need to get the actual window object.
+        ids.forEach(id => {
+          if (extraData[id] === true) { // Check if this window is being added
+            const win = Zotero.getMainWindows().find(w => w.document.documentElement.id === id)
+            if (win) {
+              onMainWindowLoad({ window: win })
             }
+          }
+        })
+      }
+      else if (event === 'remove') {
+        // In Z7, for 'remove' event, 'extraData' is the window object itself.
+        // 'ids' will contain the ID of the window being removed.
+        if (extraData) { // extraData is the window object
+          onMainWindowUnload({ window: extraData })
         }
+        else if (ids && ids.length > 0) {
+          // Fallback if extraData is not the window, though Z7 docs say it should be
+          // This part might not be strictly necessary if extraData is reliable
+          Zotero.debug(`Zotodo: Window removal detected for IDs: ${ids.join(', ')}, but no window object in extraData.`)
+        }
+      }
     }
-  }
-};
+  },
+}
 
 
 function startup({ id, version, rootURI: rtURI }: { id: string, version: string, rootURI: string }, reason: any) {
-  Zotero.debug(`Zotodo: startup ${version}, reason: ${reason}`);
-  pluginID = id;
-  rootURI = rtURI; // Will be like file:///path/to/plugin/
+  Zotero.debug(`Zotodo: startup ${version}, reason: ${reason}`)
+  pluginID = id
+  rootURI = rtURI // Will be like file:///path/to/plugin/
 
   // In Zotero 7, Services is available globally.
   // services.Services = globalThis.Services; // Not strictly necessary to store if always using global Services
-  services.aomStartup = Cc['@mozilla.org/addons/addon-manager-startup;1'].getService(Ci.amIAddonManagerStartup);
+  services.aomStartup = Cc['@mozilla.org/addons/addon-manager-startup;1'].getService(Ci.amIAddonManagerStartup)
 
-  const manifestURI = Services.io.newURI(rootURI + 'manifest.json');
-  Zotero.debug(`Zotodo: Registering chrome with manifest: ${manifestURI.spec}`);
+  const manifestURI = Services.io.newURI(`${rootURI  }manifest.json`)
+  Zotero.debug(`Zotodo: Registering chrome with manifest: ${manifestURI.spec}`)
 
   // Adjusted paths for Z7 structure (assuming build/ is not part of rootURI from Zotero)
   // The paths in manifest.json and here should lead to the resources correctly.
@@ -768,116 +764,120 @@ function startup({ id, version, rootURI: rtURI }: { id: string, version: string,
   chromeHandle = services.aomStartup.registerChrome(manifestURI, [
     ['content', 'zotodo', 'content/'], // maps to content/ in XPI root
     ['locale', 'zotodo', 'en-US', 'locale/en-US/'], // maps to locale/en-US/ in XPI root
-    ['skin', 'zotodo', 'default', 'skin/default/'] // maps to skin/default/ in XPI root (assuming skin name is 'default')
+    ['skin', 'zotodo', 'default', 'skin/default/'], // maps to skin/default/ in XPI root (assuming skin name is 'default')
     // If skin structure is just skin/, then use 'skin/'
-  ]);
+  ])
 
-  zotodoInstance = new Zotodo();
+  zotodoInstance = new Zotodo()
   zotodoInstance.init(); // Call the refactored init
-  (Zotero as any).Zotodo = zotodoInstance; // Make instance globally available
+  (Zotero ).Zotodo = zotodoInstance // Make instance globally available
 
   // Add main window listeners
-  Zotero.getMainWindows().forEach(win => onMainWindowLoad({ window: win }));
-  Zotero.Notifier.registerObserver(mainWindowObserver, ['window'], 'Zotodo-window-observer', true); // Added unique name and ignoreCache = true
-  Zotero.debug("Zotodo: startup complete.");
+  Zotero.getMainWindows().forEach(win => onMainWindowLoad({ window: win }))
+  Zotero.Notifier.registerObserver(mainWindowObserver, ['window'], 'Zotodo-window-observer', true) // Added unique name and ignoreCache = true
+  Zotero.debug('Zotodo: startup complete.')
 }
 
 function shutdown(pluginData: any, reason: any) {
-  Zotero.debug(`Zotodo: shutdown, reason: ${reason}`);
+  Zotero.debug(`Zotodo: shutdown, reason: ${reason}`)
 
-  Zotero.Notifier.unregisterObserver('Zotodo-window-observer'); // Use the unique name
+  Zotero.Notifier.unregisterObserver('Zotodo-window-observer') // Use the unique name
 
   // Call onMainWindowUnload for all open main windows
-  Zotero.getMainWindows().forEach(win => onMainWindowUnload({ window: win }));
+  Zotero.getMainWindows().forEach(win => onMainWindowUnload({ window: win }))
 
   if (zotodoInstance && zotodoInstance.notifierID) {
-    Zotero.Notifier.unregisterObserver(zotodoInstance.notifierID);
+    Zotero.Notifier.unregisterObserver(zotodoInstance.notifierID)
   }
 
   if (chromeHandle) {
-    chromeHandle.destruct();
-    chromeHandle = null;
+    chromeHandle.destruct()
+    chromeHandle = null
   }
 
-  if ((Zotero as any).Zotodo) {
-    (Zotero as any).Zotodo = null;
+  if ((Zotero ).Zotodo) {
+    (Zotero ).Zotodo = null
   }
-  zotodoInstance = null;
-  Zotero.debug("Zotodo: shutdown complete.");
+  zotodoInstance = null
+  Zotero.debug('Zotodo: shutdown complete.')
 }
 
 function install(pluginData: any, reason: any) {
-  Zotero.debug("Zotodo: install, reason: " + reason);
+  Zotero.debug(`Zotodo: install, reason: ${  reason}`)
 }
 
 function uninstall(pluginData: any, reason: any) {
-  Zotero.debug("Zotodo: uninstall, reason: " + reason);
+  Zotero.debug(`Zotodo: uninstall, reason: ${  reason}`)
 }
 
 function onMainWindowLoad({ window }: { window: any }) {
-  Zotero.debug(`Zotodo: onMainWindowLoad for window ID ${window.document.documentElement.id}`);
-  const doc = window.document;
+  Zotero.debug(`Zotodo: onMainWindowLoad for window ID ${window.document.documentElement.id}`)
+  const doc = window.document
 
   // Add 'Make Task' to item context menu
-  const itemMenuItem = doc.createXULElement('menuitem');
-  itemMenuItem.id = 'zotodo-itemmenu-make-task';
-  itemMenuItem.setAttribute('label', "Create Todoist task"); // Using literal string
+  const itemMenuItem = doc.createXULElement('menuitem')
+  itemMenuItem.id = 'zotodo-itemmenu-make-task'
+  itemMenuItem.setAttribute('label', 'Create Todoist task') // Using literal string
   itemMenuItem.addEventListener('command', () => {
     // Ensure zotodoInstance and its methods are available
     if (zotodoInstance && typeof zotodoInstance.makeTaskForSelectedItems === 'function') {
-      zotodoInstance.makeTaskForSelectedItems();
-    } else {
-      Zotero.debug("Zotodo: zotodoInstance or makeTaskForSelectedItems not available.");
+      zotodoInstance.makeTaskForSelectedItems()
     }
-  });
+    else {
+      Zotero.debug('Zotodo: zotodoInstance or makeTaskForSelectedItems not available.')
+    }
+  })
 
-  const zoteroItemMenu = doc.getElementById('zotero-itemmenu');
+  const zoteroItemMenu = doc.getElementById('zotero-itemmenu')
   if (zoteroItemMenu) {
-    let sep = doc.getElementById('id-zotodo-separator');
+    let sep = doc.getElementById('id-zotodo-separator')
     if (!sep) {
-      sep = doc.createXULElement('menuseparator');
-      sep.id = 'id-zotodo-separator';
-      zoteroItemMenu.appendChild(sep);
+      sep = doc.createXULElement('menuseparator')
+      sep.id = 'id-zotodo-separator'
+      zoteroItemMenu.appendChild(sep)
     }
-    zoteroItemMenu.appendChild(itemMenuItem);
-  } else {
-    Zotero.debug("Zotodo: zotero-itemmenu not found.");
+    zoteroItemMenu.appendChild(itemMenuItem)
+  }
+  else {
+    Zotero.debug('Zotodo: zotero-itemmenu not found.')
   }
 
   // Add 'Zotodo Options' to Tools menu
-  const toolsMenuItem = doc.createXULElement('menuitem');
-  toolsMenuItem.id = 'zotodo-toolsmenu-options';
-  toolsMenuItem.setAttribute('label', "Zotodo Preferences"); // Using literal string
+  const toolsMenuItem = doc.createXULElement('menuitem')
+  toolsMenuItem.id = 'zotodo-toolsmenu-options'
+  toolsMenuItem.setAttribute('label', 'Zotodo Preferences') // Using literal string
   toolsMenuItem.addEventListener('command', () => {
     if (zotodoInstance && typeof zotodoInstance.openPreferenceWindow === 'function') {
-      zotodoInstance.openPreferenceWindow();
-    } else {
-      Zotero.debug("Zotodo: zotodoInstance or openPreferenceWindow not available.");
+      zotodoInstance.openPreferenceWindow()
     }
-  });
+    else {
+      Zotero.debug('Zotodo: zotodoInstance or openPreferenceWindow not available.')
+    }
+  })
 
-  const toolsMenu = doc.getElementById('menu_ToolsPopup');
+  const toolsMenu = doc.getElementById('menu_ToolsPopup')
   if (toolsMenu) {
-    toolsMenu.appendChild(toolsMenuItem);
-  } else {
-    Zotero.debug("Zotodo: menu_ToolsPopup not found.");
+    toolsMenu.appendChild(toolsMenuItem)
+  }
+  else {
+    Zotero.debug('Zotodo: menu_ToolsPopup not found.')
   }
 
-  zotodoInstance?.onWindowLoad(window);
+  zotodoInstance?.onWindowLoad(window)
 }
 
 function onMainWindowUnload({ window }: { window: any }) {
-  Zotero.debug(`Zotodo: onMainWindowUnload for window ID ${window.document.documentElement.id}`);
-  const doc = window.document;
+  Zotero.debug(`Zotodo: onMainWindowUnload for window ID ${window.document.documentElement.id}`)
+  const doc = window.document
 
   // Remove 'Make Task' menu item and its separator
-  doc.getElementById('zotodo-itemmenu-make-task')?.remove();
-  doc.getElementById('id-zotodo-separator')?.remove();
+  doc.getElementById('zotodo-itemmenu-make-task')?.remove()
+  doc.getElementById('id-zotodo-separator')?.remove()
 
   // Remove 'Zotodo Options' menu item
-  doc.getElementById('zotodo-toolsmenu-options')?.remove();
+  doc.getElementById('zotodo-toolsmenu-options')?.remove()
 
-  zotodoInstance?.onWindowUnload(window);
+  zotodoInstance?.onWindowUnload(window)
 }
 
 // No Zotero.Zotodo = new Zotodo() at the end anymore.
@@ -898,4 +898,4 @@ function onMainWindowUnload({ window }: { window: any }) {
 // For clarity, an explicit export structure can be used if preferred later.
 // export { startup, shutdown, install, uninstall, onMainWindowLoad, onMainWindowUnload };
 
-Zotero.debug("Zotodo: zotodo.ts loaded");
+Zotero.debug('Zotodo: zotodo.ts loaded')
