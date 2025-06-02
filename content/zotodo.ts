@@ -1,9 +1,9 @@
 declare const Zotero: any
 declare const Services: any
 declare const Components: any
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components
 
 const monkey_patch_marker = 'ZotodoMonkeyPatched'
+const MAX_PRIORITY = 5
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-inner-declarations, prefer-arrow/prefer-arrow-functions
 function patch(object: any, method: string, patcher: (original: any) => any) {
@@ -191,7 +191,7 @@ class TodoistAPI {
     }
 
     if (task_data.note != null) {
-      const task_id = (JSON.parse(createResponse.text)).id // Parse response text
+      const task_id = (JSON.parse(createResponse.text as string)).id // Parse response text
       const notePayload = {
         content: task_data.note,
         task_id,
@@ -336,7 +336,7 @@ class TodoistAPI {
       return false
     }
 
-    const data = JSON.parse(response.text)
+    const data = JSON.parse(response.text as string)
     if (!this.sections[project_name]) this.sections[project_name] = {};
     this.sections[project_name][data.name] = data.id
 
@@ -370,7 +370,7 @@ class TodoistAPI {
       return false
     }
 
-    const data = JSON.parse(response.text)
+    const data = JSON.parse(response.text as string)
     if (!this.projects) this.projects = {};
     this.projects[data.name] = data.id
 
@@ -404,7 +404,7 @@ class TodoistAPI {
       return false
     }
 
-    const data = JSON.parse(response.text)
+    const data = JSON.parse(response.text as string)
     if (!this.labels) this.labels = {};
     this.labels[data.name] = data.id
 
@@ -436,7 +436,7 @@ class TodoistAPI {
       return null
     }
 
-    const data = JSON.parse(response.text)
+    const data = JSON.parse(response.text as string)
     const items: { [k: string]: number } = {}
     for (const item of data) {
       items[item.name] = item.id
@@ -488,7 +488,7 @@ class Zotodo {
   }
 
   private notifierCallback: any = { // Made 'any' to match Zotero typings
-    notify: (event: string, type: string, ids: number[], extraData?: object) => {
+    notify: (event: string, type: string, ids: number[], _extraData?: object) => {
       if (getPref('automatic_add') && type === 'item' && event === 'add') {
         const items = Zotero.Items.get(ids)
           .map((item: ZoteroItem) => {
@@ -505,7 +505,7 @@ class Zotodo {
 
         for (const item of items) {
           Zotero.debug(`Zotodo: Making task for ${item.getField('title')}`) // Use Zotero.debug
-          this.makeTaskForItem(item) // Removed Zotero.Zotodo
+          void this.makeTaskForItem(item as ZoteroItem) // Removed Zotero.Zotodo
         }
       }
     },
@@ -563,7 +563,7 @@ class Zotodo {
     const ignore_collections_string: string = getPref('ignore_collections') as string;
     const ignore_collections: string[] = ignore_collections_string ? ignore_collections_string.split(',') : [];
 
-    const priority: number = 5 - getPref('priority')
+    const priority: number = MAX_PRIORITY - getPref('priority')
     const project_name: string = getPref('project')
     const section_name: string = getPref('section')
 
@@ -662,7 +662,7 @@ class Zotodo {
             return data[token] ? value : '';
         });
         // Conditional blocks: !${token}:value!
-        template = template.replace(/!\$\{([^}]+)\}:([^!]*)\!/g, (match, token, value) => {
+        template = template.replace(/!$\{([^}]+)\}:([^!]*)!/g, (match, token, value) => {
             return !data[token] ? value : '';
         });
         // Regular tokens: ${token}
@@ -694,17 +694,17 @@ class Zotodo {
       task_data.section_name = section_name
     }
 
-    void this.todoist.createTask(task_data)
+    await this.todoist.createTask(task_data)
   }
 
   // Methods for window load/unload, can be expanded if menu items need specific handling
-  public onWindowLoad(window: any) {
+  public onWindowLoad() {
     Zotero.debug("Zotodo: onWindowLoad");
     // Placeholder for adding menu items or other window-specific logic
     // Example: this.addMenuItems(window);
   }
 
-  public onWindowUnload(window: any) {
+  public onWindowUnload() {
     Zotero.debug("Zotodo: onWindowUnload");
     // Placeholder for removing menu items or other window-specific cleanup
     // Example: this.removeMenuItems(window);
@@ -712,12 +712,10 @@ class Zotodo {
 }
 
 // --- Bootstrap Functions ---
-let pluginID: string | null = null;
 let rootURI: string | null = null;
 let chromeHandle: any = null; // Stores the chrome registration handle
 let zotodoInstance: Zotodo | null = null;
 const services: { aomStartup?: any, Services?: any } = {}; // To store Cc and Services if needed
-const windowListeners: any[] = []; // To keep track of added window listeners if any complex logic arises
 
 const mainWindowObserver = {
   notify: (event: string, type: string, ids: string[], extraData: any) => { // ids are strings in Z7 for windows
@@ -750,9 +748,8 @@ const mainWindowObserver = {
 };
 
 
-function startup({ id, version, rootURI: rtURI }: { id: string, version: string, rootURI: string }, reason: any) {
+function startup({ version, rootURI: rtURI }: { version: string, rootURI: string }, reason: any) {
   Zotero.debug(`Zotodo: startup ${version}, reason: ${reason}`);
-  pluginID = id;
   rootURI = rtURI; // Will be like file:///path/to/plugin/
 
   // In Zotero 7, Services is available globally.
@@ -782,7 +779,7 @@ function startup({ id, version, rootURI: rtURI }: { id: string, version: string,
   Zotero.debug("Zotodo: startup complete.");
 }
 
-function shutdown(pluginData: any, reason: any) {
+function shutdown(reason: any) {
   Zotero.debug(`Zotodo: shutdown, reason: ${reason}`);
 
   Zotero.Notifier.unregisterObserver('Zotodo-window-observer'); // Use the unique name
@@ -806,11 +803,11 @@ function shutdown(pluginData: any, reason: any) {
   Zotero.debug("Zotodo: shutdown complete.");
 }
 
-function install(pluginData: any, reason: any) {
+function install(reason: any) {
   Zotero.debug("Zotodo: install, reason: " + reason);
 }
 
-function uninstall(pluginData: any, reason: any) {
+function uninstall(reason: any) {
   Zotero.debug("Zotodo: uninstall, reason: " + reason);
 }
 

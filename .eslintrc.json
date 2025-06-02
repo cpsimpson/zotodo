@@ -289,11 +289,5 @@
     "yoda": "error",
     "@typescript-eslint/consistent-type-definitions": "off",
     "no-new-func": "off"
-  },
-  "ignorePatterns": [
-    "webpack.config.ts",
-    "util/*.ts",
-    "minitests/*.ts",
-    "content/minitests/*.ts"
-  ]
+  }
 }
