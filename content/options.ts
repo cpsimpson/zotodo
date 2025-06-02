@@ -1,3 +1,5 @@
+declare const Zotero: any;
+
 interface ZoteroBooleanPreference {
   value: boolean
 }
