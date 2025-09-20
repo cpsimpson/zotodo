@@ -118,114 +118,106 @@ class TodoistAPI {
   private sections: Record<string, Record<string, number>> = {}
 
   constructor(token: string) {
-    this.token = token
+    this.token = (token || '').trim()
   }
 
   public async createTask(task_data: TaskData) {
-    const icon = `chrome://zotero/skin/spinner-16px${Zotero.hiDPI ? '@2x' : ''
-    }.png`
+    const icon = `chrome://zotero/skin/spinner-16px${Zotero.hiDPI ? '@2x' : ''}.png`
     const progWin = show(icon, 'Creating task', 'Making Todoist task for item')
-    if (this.token == null || this.token === '') {
-      this.token = getPref('todoist_token')
-    }
 
-    const project_id = await this.getProjectId(task_data.project_name, progWin)
-    if (project_id == null) {
-      return
-    }
-
-    let section_id = null
-    if (task_data.section_name != null) {
-      section_id = await this.getSectionId(
-        task_data.section_name,
-        task_data.project_name,
-        progWin
-      )
-      if (section_id == null) {
-        return
+    try {
+      if (this.token == null || this.token === '') {
+        this.token = getPref('todoist_token')
       }
-    }
-
-    const label_ids = []
-    for (const label_name of task_data.label_names) {
-      const label_id = await this.getLabelId(label_name, progWin)
-      if (label_id == null) {
+      this.token = (this.token || '').trim()
+      if (!this.token || this.token.length < 10) {
+        const msg = 'Zotodo: Todoist API token appears missing or invalid (length ' + String(this.token ? this.token.length : 0) + '). Set it in Zotodo preferences.'
+        showError(msg, progWin)
+        try { Zotero.logError(msg) } catch (_ee) {}
         return
       }
 
-      label_ids.push(label_id)
-    }
+      const project_id = await this.getProjectId(task_data.project_name, progWin)
+      if (project_id == null) return
 
-    const createPayload: { [k: string]: any } = {
-      content: task_data.contents,
-      project_id,
-      priority: task_data.priority,
-    }
-
-    if (label_ids.length > 0) {
-      createPayload.label_ids = label_ids
-    }
-
-    if (section_id != null) {
-      createPayload.section_id = section_id
-    }
-
-    if (task_data.due_string != null) {
-      createPayload.due_string = task_data.due_string
-    }
-
-    const createHeaders = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${this.token}`,
-    }
-
-    const createResponse = await Zotero.HTTP.request( // Use Zotero.HTTP for Z7
-      'POST',
-      'https://api.todoist.com/rest/v2/tasks',
-      {
-        headers: createHeaders,
-        body: JSON.stringify(createPayload),
-      }
-    )
-
-    if (!createResponse.ok) {
-      const err = createResponse.text // Access response text directly
-      const msg = `Error creating task: ${createResponse.statusText} ${err}`
-      showError(msg, progWin)
-      Zotero.logError(msg)
-      return
-    }
-
-    if (task_data.note != null) {
-      const task_id = (JSON.parse(createResponse.text as string)).id // Parse response text
-      const notePayload = {
-        content: task_data.note,
-        task_id,
+      let section_id = null
+      if (task_data.section_name != null) {
+        section_id = await this.getSectionId(
+          task_data.section_name,
+          task_data.project_name,
+          progWin
+        )
+        if (section_id == null) return
       }
 
-      const noteHeaders = {
+      const label_ids = []
+      for (const label_name of task_data.label_names) {
+        const label_id = await this.getLabelId(label_name, progWin)
+        if (label_id == null) return
+        label_ids.push(label_id)
+      }
+
+      const createPayload: { [k: string]: any } = {
+        content: task_data.contents,
+        project_id,
+        priority: task_data.priority,
+      }
+      if (label_ids.length > 0) createPayload.label_ids = label_ids
+      if (section_id != null) createPayload.section_id = section_id
+      if (task_data.due_string != null) createPayload.due_string = task_data.due_string
+
+      const headers = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.token}`,
       }
 
-      const noteResponse = await Zotero.HTTP.request( // Use Zotero.HTTP for Z7
-        'POST',
-        'https://api.todoist.com/rest/v2/comments',
-        {
-          headers: noteHeaders,
-          body: JSON.stringify(notePayload),
-        }
-      )
+      const normalize = (resp: any) => {
+        const status = typeof resp?.status === 'number' ? resp.status : (typeof resp?.response?.status === 'number' ? resp.response.status : 0)
+        const text = (resp && (resp.responseText != null)) ? resp.responseText : (resp && resp.text != null ? resp.text : '')
+        const statusText = resp?.statusText || ''
+        const ok = (typeof resp?.ok === 'boolean') ? resp.ok : (status >= 200 && status < 300)
+        return { status, statusText, text, ok }
+      }
 
-      if (!noteResponse.ok) {
-        const err = noteResponse.text
-        const msg = `Error adding comment: ${noteResponse.statusText} ${err}`
+      const createRespRaw = await Zotero.HTTP.request('POST', 'https://api.todoist.com/rest/v2/tasks', { headers, body: JSON.stringify(createPayload) })
+      const createResp = normalize(createRespRaw)
+      if (!createResp.ok) {
+        const msg = `Error creating task: ${createResp.status} ${createResp.statusText} ${createResp.text}`
         showError(msg, progWin)
         Zotero.logError(msg)
         return
       }
+
+      if (task_data.note != null) {
+        let task_id: any = null
+        try {
+          task_id = (JSON.parse(String(createResp.text))).id
+        } catch (e) {
+          const msg = 'Error parsing create task response for task ID: ' + (e && (e.message || String(e)))
+          showError(msg, progWin)
+          Zotero.logError(msg)
+          return
+        }
+
+        const notePayload = { content: task_data.note, task_id }
+        const noteRespRaw = await Zotero.HTTP.request('POST', 'https://api.todoist.com/rest/v2/comments', { headers, body: JSON.stringify(notePayload) })
+        const noteResp = normalize(noteRespRaw)
+        if (!noteResp.ok) {
+          const msg = `Error adding comment: ${noteResp.status} ${noteResp.statusText} ${noteResp.text}`
+          showError(msg, progWin)
+          Zotero.logError(msg)
+          return
+        }
+      }
+
+      showSuccess(task_data, progWin)
+    } catch (e3) {
+      const msg = 'Zotodo: createTask failed: ' + (e3 && (e3.stack || e3.message || String(e3)))
+      try { Zotero.logError(msg) } catch (_ee) {}
+      try { Zotero.debug(msg) } catch (_ee2) {}
+      try { Components.utils.reportError(msg) } catch (_ee3) {}
+      try { showError('Failed to create task. See Browser Console for details.', progWin) } catch (_ee4) {}
     }
-    showSuccess(task_data, progWin)
   }
 
   private async getSectionId(
@@ -426,23 +418,40 @@ class TodoistAPI {
       Authorization: `Bearer ${this.token}`,
     }
 
-    const response = await Zotero.HTTP.request( // Use Zotero.HTTP for Z7
-      'GET',
-      endpoint,
-      {
-        headers,
-      }
-    )
+    let status = 0
+    let statusText = ''
+    let text = ''
 
-    if (!response.ok) {
-      const err = response.text
-      const msg = `Error requesting from ${endpoint}: ${response.statusText} ${err}`
+    try {
+      const resp: any = await Zotero.HTTP.request('GET', endpoint, { headers })
+      // Zotero.HTTP returns an object; normalize fields
+      status = typeof resp?.status === 'number' ? resp.status : (typeof resp?.response?.status === 'number' ? resp.response.status : 0)
+      statusText = resp?.statusText || ''
+      text = (resp && (resp.responseText != null)) ? String(resp.responseText) : (resp && resp.text != null ? String(resp.text) : '')
+      const ok = (typeof resp?.ok === 'boolean') ? resp.ok : (status >= 200 && status < 300)
+      if (!ok) throw { status, statusText, text }
+    } catch (e: any) {
+      status = e?.status || status
+      statusText = e?.statusText || statusText
+      text = e?.text || text
+      let hint = ''
+      if (status === 401 || status === 403) hint = ' (Unauthorized — check your Todoist API token in Zotodo preferences)'
+      const msg = `Error requesting from ${endpoint}: ${status} ${statusText} ${text}${hint}`
       showError(msg, progWin)
-      Zotero.logError(msg)
+      try { Zotero.logError(msg) } catch (_ee) {}
       return null
     }
 
-    const data = JSON.parse(response.text as string) as TodoistApiItem[]
+    let data: TodoistApiItem[] = []
+    try {
+      data = JSON.parse(text) as TodoistApiItem[]
+    } catch (e) {
+      const msg = `Error parsing response from ${endpoint}: ${String(e && (e.message || e))}`
+      showError(msg, progWin)
+      try { Zotero.logError(msg) } catch (_ee) {}
+      return null
+    }
+
     const items: { [k: string]: number } = {}
     for (const item of data) {
       items[item.name] = item.id
@@ -580,142 +589,136 @@ class Zotodo {
   }
 
   private async makeTaskForItem(item: ZoteroItem) {
-    const due_string: string = getPref('due_string')
-    const label_names_string: string = getPref('labels') as string
-    let label_names: string[] = []
-    if (label_names_string !== '') {
-      label_names = label_names_string.split(',')
-    }
-
-    const ignore_collections_string: string = getPref('ignore_collections') as string
-    const ignore_collections: string[] = ignore_collections_string ? ignore_collections_string.split(',') : []
-
-    const priority: number = MAX_PRIORITY - getPref('priority')
-    const project_name: string = getPref('project')
-    const section_name: string = getPref('section')
-
-    const set_due: boolean = getPref('set_due')
-    const include_note: boolean = getPref('include_note')
-    const note_format: string = getPref('note_format')
-    const task_format: string = getPref('task_format')
-
-    const item_collections = item
-      .getCollections()
-      .map(id => Zotero.Collections.get(id).name as string)
-    for (const ignored_name of ignore_collections) {
-      if (item_collections.includes(ignored_name.trim())) { // Added trim
-        Zotero.debug(`Zotodo: Item "${item.getField('title')}" in ignored collection "${ignored_name.trim()}", skipping.`)
-        return
+    try {
+      Zotero.debug('Zotodo: makeTaskForItem begin')
+      // Coerce preferences to safe defaults to avoid runtime errors when unset
+      const due_string_raw: any = getPref('due_string')
+      const due_string: string = (typeof due_string_raw === 'string') ? due_string_raw : ''
+      const label_names_string_raw: any = getPref('labels')
+      const label_names_string: string = (typeof label_names_string_raw === 'string') ? label_names_string_raw : ''
+      let label_names: string[] = []
+      if (label_names_string.trim() !== '') {
+        label_names = label_names_string.split(',').map(s => s.trim()).filter(s => s.length)
       }
-    }
 
-    const title: string = item.getField('title', false, true) || ''
-    const abstract: string = item.getField('abstractNote', false, true) || ''
-    const url: string = item.getField('url', false, true) || ''
-    const doi: string = item.getField('DOI', false, true) || ''
-    let pdf_path = ''
-    let pdf_id = '' // Changed to string for consistency with Z7 URIs
-    const attachments: any[] = item.getAttachments(false).map(id => Zotero.Items.get(id)) // Get full attachment items
-    if (attachments.length > 0) {
-      for (const attachment of attachments) {
-        if (attachment.attachmentContentType === 'application/pdf') {
-          pdf_path = attachment.attachmentPath || ''
-          pdf_id = attachment.key || '' // Use key for URI
-          break
+      const ignore_collections_string_raw: any = getPref('ignore_collections')
+      const ignore_collections_string: string = (typeof ignore_collections_string_raw === 'string') ? ignore_collections_string_raw : ''
+      const ignore_collections: string[] = ignore_collections_string ? ignore_collections_string.split(',').map(s => s.trim()).filter(s => s.length) : []
+
+      const userPriorityRaw: any = getPref('priority')
+      let userPriority = Number(userPriorityRaw)
+      if (!Number.isFinite(userPriority) || userPriority < 1 || userPriority > 4) userPriority = 1
+      const priority: number = MAX_PRIORITY - userPriority
+      const project_name_raw: any = getPref('project')
+      const project_name: string = (typeof project_name_raw === 'string' && project_name_raw.trim() !== '') ? project_name_raw : 'Inbox'
+      const section_name_raw: any = getPref('section')
+      const section_name: string = (typeof section_name_raw === 'string') ? section_name_raw : ''
+
+      const set_due: boolean = Boolean(getPref('set_due'))
+      const include_note: boolean = Boolean(getPref('include_note'))
+      const note_format_raw: any = getPref('note_format')
+      const note_format: string = (typeof note_format_raw === 'string') ? note_format_raw : ''
+      const task_format_raw: any = getPref('task_format')
+      const task_format: string = (typeof task_format_raw === 'string' && task_format_raw.trim() !== '') ? task_format_raw : '${title}'
+
+      Zotero.debug('Zotodo: before getCollections for item ' + String((item as any)?.id || (item as any)?.key))
+      const item_collections = (typeof item.getCollections === 'function' ? item.getCollections() : [])
+        .map(id => {
+          const col = Zotero.Collections && Zotero.Collections.get ? Zotero.Collections.get(id) : null
+          return col ? (col.name as string) : ''
+        })
+      for (const ignored_name of ignore_collections) {
+        if (item_collections.includes(ignored_name.trim())) {
+          Zotero.debug(`Zotodo: Item "${item.getField('title')}" in ignored collection "${ignored_name.trim()}", skipping.`)
+          return
         }
       }
-    }
+      Zotero.debug('Zotodo: makeTaskForItem after collections check')
 
-    const author_type_id: number = Zotero.CreatorTypes.getPrimaryIDForType(
-      item.itemTypeID
-    )
-
-    const author_names: string[] = item
-      .getCreators()
-      .filter(
-        (creator: ZoteroCreator) => creator.creatorTypeID === author_type_id
-      )
-      .map(
-        (creator: ZoteroCreator) => `${creator.firstName || ''} ${creator.lastName || ''}`.trim() // Handle missing names
-      )
-
-    let et_al = ''
-    if (author_names.length > 0) {
-      et_al = `${author_names[0]} et al.`
-    }
-
-    const authors = author_names.join(', ')
-    const item_id = item.key
-    let library_path = 'library'
-    const library = Zotero.Libraries.get(item.libraryID)
-    if (library && library.libraryType === 'group') { // Check if library exists
-      library_path = Zotero.URI.getLibraryPath(item.libraryID)
-    }
-
-    const select_uri = `zotero://select/${library_path}/items/${item_id}`
-    let open_uri = ''
-    if (pdf_id !== '') { open_uri = `zotero://open-pdf/${library_path}/items/${pdf_id}` }
-    let citekey = ''
-    if (
-      Zotero.BetterBibTeX && // Check for BBT existence
-      Zotero.BetterBibTeX.KeyManager
-    ) {
-      const bbtItem = Zotero.BetterBibTeX.KeyManager.get(item.id) // BBT uses item.id (integer)
-      if (bbtItem && bbtItem.citekey) {
-        citekey = bbtItem.citekey
+      const title: string = item.getField('title', false, true) || ''
+      const abstract: string = item.getField('abstractNote', false, true) || ''
+      const url: string = item.getField('url', false, true) || ''
+      const doi: string = item.getField('DOI', false, true) || ''
+      let pdf_path = ''
+      let pdf_id = ''
+      const attachments: any[] = item.getAttachments(false).map(id => Zotero.Items.get(id))
+      if (attachments.length > 0) {
+        for (const attachment of attachments) {
+          if (attachment.attachmentContentType === 'application/pdf') {
+            pdf_path = attachment.attachmentPath || ''
+            pdf_id = attachment.key || ''
+            break
+          }
+        }
       }
+
+      const author_type_id: any = (typeof item.itemTypeID === 'number') ? Zotero.CreatorTypes.getPrimaryIDForType(item.itemTypeID) : null
+      const creators: ZoteroCreator[] = (typeof item.getCreators === 'function' && item.getCreators()) ? item.getCreators() : []
+      const author_names: string[] = (author_type_id != null ? creators.filter((c: ZoteroCreator) => c.creatorTypeID === author_type_id) : creators)
+        .map((creator: ZoteroCreator) => `${creator.firstName || ''} ${creator.lastName || ''}`.trim())
+
+      let et_al = ''
+      if (author_names.length > 0) et_al = `${author_names[0]} et al.`
+      Zotero.debug('Zotodo: makeTaskForItem after authors build')
+
+      const authors = author_names.join(', ')
+      const item_id = item.key
+      let library_path = 'library'
+      const library = Zotero.Libraries.get(item.libraryID)
+      if (library && library.libraryType === 'group') {
+        library_path = Zotero.URI.getLibraryPath(item.libraryID)
+      }
+
+      const select_uri = `zotero://select/${library_path}/items/${item_id}`
+      let open_uri = ''
+      if (pdf_id !== '') open_uri = `zotero://open-pdf/${library_path}/items/${pdf_id}`
+      let citekey = ''
+      if (Zotero.BetterBibTeX && Zotero.BetterBibTeX.KeyManager) {
+        const bbtItem = Zotero.BetterBibTeX.KeyManager.get(item.id)
+        if (bbtItem && bbtItem.citekey) citekey = bbtItem.citekey
+      }
+
+      const tokens: Record<string, string | number> = {
+        title,
+        abstract,
+        url,
+        doi,
+        pdf_path,
+        pdf_id,
+        et_al,
+        authors,
+        library_path,
+        item_id,
+        select_uri,
+        open_uri,
+        citekey,
+      }
+
+      const replaceTokens = (template: string, data: Record<string, any>): string => {
+        template = template.replace(/\?\$\{([^}]+)\}:([^?]*)\?/g, (match: string, token: string, value: string): string => data[token] ? value : '')
+        template = template.replace(/!\$\{([^}]+)\}:([^!]*)!/g, (match: string, token: string, value: string): string => !data[token] ? value : '')
+        template = template.replace(/\$\{([^}]+)\}/g, (match: string, token: string): string => String(data[token] || ''))
+        return template
+      }
+
+      Zotero.debug('Zotodo: makeTaskForItem after tokens build')
+      const note_contents: string = replaceTokens(note_format, tokens)
+      const task_contents: string = replaceTokens(task_format, tokens)
+
+      const task_data = new TaskData(task_contents, priority, project_name, label_names)
+      if (include_note) task_data.note = note_contents
+      if (set_due) task_data.due_string = due_string
+      if (section_name !== '') task_data.section_name = section_name
+
+      Zotero.debug('Zotodo: makeTaskForItem before createTask')
+      await this.todoist.createTask(task_data)
+    } catch (e) {
+      const msg = 'Zotodo: makeTaskForItem failed: ' + (e && (e.stack || e.message || String(e)))
+      try { Zotero.logError(msg) } catch (_ee) {}
+      try { Zotero.debug(msg) } catch (_ee2) {}
+      try { Components.utils.reportError(msg) } catch (_ee3) {}
+      try { Zotero.alert(null, 'Zotodo', 'Failed to prepare task; see Browser Console for details.') } catch (_ee4) {}
     }
-
-    const tokens: Record<string, string | number> = { // Ensure specific types if needed, but string is fine for templating
-      title,
-      abstract,
-      url,
-      doi,
-      pdf_path,
-      pdf_id,
-      et_al,
-      authors,
-      library_path,
-      item_id,
-      select_uri,
-      open_uri,
-      citekey,
-    }
-
-    // Replace eval with safer template substitution
-    const replaceTokens = (template: string, data: Record<string, any>): string => {
-      // Conditional blocks: ?${token}:value?
-      template = template.replace(/\?\$\{([^}]+)\}:([^?]*)\?/g, (match: string, token: string, value: string): string => data[token] ? value : '')
-      // Conditional blocks: !${token}:value!
-      template = template.replace(/!$\{([^}]+)\}:([^!]*)!/g, (match: string, token: string, value: string): string => !data[token] ? value : '')
-      // Regular tokens: ${token}
-      template = template.replace(/\$\{([^}]+)\}/g, (match: string, token: string): string => String(data[token] || ''))
-      return template
-    }
-
-    const note_contents: string = replaceTokens(note_format, tokens)
-    const task_contents: string = replaceTokens(task_format, tokens)
-
-    const task_data = new TaskData(
-      task_contents,
-      priority,
-      project_name,
-      label_names
-    )
-
-    if (include_note) {
-      task_data.note = note_contents
-    }
-
-    if (set_due) {
-      task_data.due_string = due_string
-    }
-
-    if (section_name !== '') {
-      task_data.section_name = section_name
-    }
-
-    await this.todoist.createTask(task_data)
   }
 
   // Methods for window load/unload, can be expanded if menu items need specific handling
