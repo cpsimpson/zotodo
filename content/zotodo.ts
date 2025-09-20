@@ -770,8 +770,7 @@ export function startup({ version, rootURI: rtURI }: { version: string, rootURI:
   chromeHandle = services.aomStartup.registerChrome(manifestURI, [
     ['content', 'zotodo', 'content/'], // maps to content/ in XPI root
     ['locale', 'zotodo', 'en-US', 'locale/en-US/'], // maps to locale/en-US/ in XPI root
-    ['skin', 'zotodo', 'default', 'skin/default/'], // maps to skin/default/ in XPI root (assuming skin name is 'default')
-    // If skin structure is just skin/, then use 'skin/'
+    ['skin', 'zotodo', 'default', 'skin/'], // maps to skin/ in XPI root
   ])
 
   zotodoInstance = new Zotodo()
