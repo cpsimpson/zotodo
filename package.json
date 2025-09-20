@@ -1,6 +1,7 @@
 {
   "name": "zotodo",
-  "version": "0.10.1",
+  "id": "zotodo@wbthomason.github.com",
+  "version": "0.10.2-dev",
   "description": "Add papers imported to Zotero as Todoist tasks",
   "scripts": {
     "lint": "eslint . --ext .ts --cache --cache-location .eslintcache/",

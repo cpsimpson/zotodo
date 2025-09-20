@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Zotodo",
-  "version": "0.10.1",
+  "version": "0.10.2-dev",
   "description": "Add papers imported to Zotero as Todoist tasks",
   "author": "Wil Thomason",
   "applications": {

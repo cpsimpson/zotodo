@@ -521,18 +521,36 @@ class Zotodo {
   }
 
   public openPreferenceWindow(paneID?: any, action?: any) {
-    const win = Zotero.getMainWindow() // Get main window reference
+    const win = Zotero.getMainWindow()
     if (!win) {
       Zotero.logError('Zotodo: Could not get main window to open preferences')
       return
     }
     const io = { pane: paneID, action }
-    win.openDialog(
-      'chrome://zotodo/content/options.xhtml',
-      'zotodo-options',
-      `chrome,titlebar,toolbar,centerscreen${Zotero.Prefs.get('browser.preferences.instantApply', true) ? 'dialog=no' : 'modal'}`,
-      io
-    )
+    const features = `chrome,titlebar,toolbar,centerscreen${Zotero.Prefs.get('browser.preferences.instantApply', true) ? 'dialog=no' : 'modal'}`
+
+    // Prefer rootURI (jar/file) to avoid reliance on chrome registration in Zotero 8
+    try {
+      const url = (rootURI && typeof rootURI === 'string') ? (rootURI + 'content/options.xhtml') : null
+      if (url) {
+        win.openDialog(url, 'zotodo-options', features, io)
+        return
+      }
+    } catch (eRoot) {
+      try { Zotero.debug('Zotodo: preferences rootURI open failed, will try chrome:// as fallback: ' + (eRoot && (eRoot.message || String(eRoot)))) } catch (_e) {}
+    }
+
+    // Fallback to chrome:// if rootURI was not available or failed
+    try {
+      win.openDialog('chrome://zotodo/content/options.xhtml', 'zotodo-options', features, io)
+      return
+    } catch (eChrome) {
+      const msg = 'Zotodo: preferences open failed (both rootURI and chrome): ' + (eChrome && (eChrome.message || String(eChrome)))
+      try { Zotero.logError(msg) } catch (_ee) {}
+      try { Zotero.debug(msg) } catch (_ee2) {}
+      try { Components.utils.reportError(msg) } catch (_ee3) {}
+      try { win.alert('Zotodo: preferences UI not available; see Browser Console for details') } catch (_ee4) {}
+    }
   }
 
   public makeTaskForSelectedItems() {
@@ -757,29 +775,66 @@ export function startup({ version, rootURI: rtURI }: { version: string, rootURI:
   Zotero.debug(`Zotodo: startup ${version}, reason: ${String(reason)}`)
   rootURI = rtURI // Will be like file:///path/to/plugin/
 
+  // Install global unhandled promise rejection logger to track silent errors
+  try {
+    const handler = (event: any) => {
+      try {
+        const reason = event?.reason
+        const msg = `Zotodo: Unhandled promise rejection: ${reason && (reason.stack || reason.message || String(reason))}`
+        Zotero.logError(msg)
+        Zotero.debug(msg)
+      } catch (_e) { /* ignore */ }
+    }
+    ;(globalThis as any).addEventListener && (globalThis as any).addEventListener('unhandledrejection', handler)
+  } catch (_e) { /* ignore */ }
+
   // In Zotero 7, Services is available globally.
   // services.Services = globalThis.Services; // Not strictly necessary to store if always using global Services
   services.aomStartup = Cc['@mozilla.org/addons/addon-manager-startup;1'].getService(Ci.amIAddonManagerStartup)
 
-  const manifestURI = Services.io.newURI(`${rootURI  }manifest.json`)
-  Zotero.debug(`Zotodo: Registering chrome with manifest: ${manifestURI.spec}`)
+  try {
+    if (rootURI) {
+      // Build manifest URI using IOService to avoid reliance on global Services in Zotero 8
+      const ioService = Cc['@mozilla.org/network/io-service;1'].getService(Ci.nsIIOService)
+      const manifestURI = ioService.newURI(`${rootURI}manifest.json`)
+      Zotero.debug(`Zotodo: Registering chrome with manifest: ${manifestURI.spec}`)
 
-  // Adjusted paths for Z7 structure (assuming build/ is not part of rootURI from Zotero)
-  // The paths in manifest.json and here should lead to the resources correctly.
-  // If your resources are inside a 'content', 'locale', 'skin' folder at the root of the XPI, this is correct.
-  chromeHandle = services.aomStartup.registerChrome(manifestURI, [
-    ['content', 'zotodo', 'content/'], // maps to content/ in XPI root
-    ['locale', 'zotodo', 'en-US', 'locale/en-US/'], // maps to locale/en-US/ in XPI root
-    ['skin', 'zotodo', 'default', 'skin/'], // maps to skin/ in XPI root
-  ])
+      // Adjusted paths for Z7 structure (assuming build/ is not part of rootURI from Zotero)
+      // The paths in manifest.json and here should lead to the resources correctly.
+      // If your resources are inside a 'content', 'locale', 'skin' folder at the root of the XPI, this is correct.
+      chromeHandle = services.aomStartup.registerChrome(manifestURI, [
+        ['content', 'zotodo', 'content/'], // maps to content/ in XPI root
+        ['locale', 'zotodo', 'en-US', 'locale/en-US/'], // maps to locale/en-US/ in XPI root
+        ['skin', 'zotodo', 'default', 'skin/'], // maps to skin/ in XPI root
+      ])
+    }
+    else {
+      Zotero.debug('Zotodo: startup without rootURI; assuming chrome.manifest provided the chrome registrations')
+    }
+  }
+  catch (e) {
+    try { Zotero.logError('Zotodo: chrome registration skipped/failed: ' + (e && (e.message || String(e)))) } catch (_ee) {}
+  }
 
   zotodoInstance = new Zotodo()
-  zotodoInstance.init(); // Call the refactored init
-  (Zotero ).Zotodo = zotodoInstance // Make instance globally available
+  try {
+    zotodoInstance.init(); // Call the refactored init
+  } catch (e) {
+    const msg = `Zotodo: init failed: ${e && (e.stack || e.message || String(e))}`
+    Zotero.logError(msg)
+    Zotero.debug(msg)
+  }
+  ;(Zotero as any).Zotodo = zotodoInstance // Make instance globally available
 
   // Add main window listeners
-  Zotero.getMainWindows().forEach(win => onMainWindowLoad({ window: win }))
-  Zotero.Notifier.registerObserver(mainWindowObserver, ['window'], 'Zotodo-window-observer', true) // Added unique name and ignoreCache = true
+  try {
+    Zotero.getMainWindows().forEach(win => onMainWindowLoad({ window: win }))
+  } catch (e) {
+    const msg = `Zotodo: error in onMainWindowLoad during startup: ${e && (e.stack || e.message || String(e))}`
+    Zotero.logError(msg)
+    Zotero.debug(msg)
+  }
+  // Do not register a 'window' notifier in Zotero 8; bootstrap handles window/menu hooks.
   Zotero.debug('Zotodo: startup complete.')
 }
 
@@ -820,7 +875,7 @@ function onMainWindowLoad({ window }: { window: any }) {
   const doc = window.document
 
   // Add 'Make Task' to item context menu
-  const itemMenuItem = doc.createXULElement('menuitem')
+  const itemMenuItem = (doc.createXULElement ? doc.createXULElement('menuitem') : doc.createElement('menuitem'))
   itemMenuItem.id = 'zotodo-itemmenu-make-task'
   itemMenuItem.setAttribute('label', 'Create Todoist task') // Using literal string
   itemMenuItem.addEventListener('command', () => {
@@ -837,7 +892,7 @@ function onMainWindowLoad({ window }: { window: any }) {
   if (zoteroItemMenu) {
     let sep = doc.getElementById('id-zotodo-separator')
     if (!sep) {
-      sep = doc.createXULElement('menuseparator')
+      sep = (doc.createXULElement ? doc.createXULElement('menuseparator') : doc.createElement('menuseparator'))
       sep.id = 'id-zotodo-separator'
       zoteroItemMenu.appendChild(sep)
     }
@@ -860,12 +915,16 @@ function onMainWindowLoad({ window }: { window: any }) {
     }
   })
 
+  // Try multiple known Tools menu IDs across Zotero versions
   const toolsMenu = doc.getElementById('menu_ToolsPopup')
+    || doc.getElementById('menu_Tools')?.querySelector('menupopup')
+    || doc.getElementById('tools-menu')
+    || doc.getElementById('zotero-tools-menu')
   if (toolsMenu) {
     toolsMenu.appendChild(toolsMenuItem)
   }
   else {
-    Zotero.debug('Zotodo: menu_ToolsPopup not found.')
+    Zotero.debug('Zotodo: Tools menu popup not found (tried menu_ToolsPopup, menu_Tools>menupopup, tools-menu, zotero-tools-menu).')
   }
 
   zotodoInstance?.onWindowLoad(window)
@@ -903,4 +962,34 @@ function onMainWindowUnload({ window }: { window: any }) {
 // For clarity, an explicit export structure can be used if preferred later.
 // export { startup, shutdown, install, uninstall, onMainWindowLoad, onMainWindowUnload };
 
-Zotero.debug('Zotodo: zotodo.ts loaded')
+// Expose lifecycle functions on the global object so bootstrap can find them even when bundled as an IIFE
+try {
+  ;(globalThis as any).startup = startup
+  ;(globalThis as any).shutdown = shutdown
+  ;(globalThis as any).install = install
+  ;(globalThis as any).uninstall = uninstall
+  ;(globalThis as any).ZotodoEntrypoints = { startup, shutdown, install, uninstall }
+} catch (_e) { /* ignore */ }
+
+try { if (typeof Zotero !== 'undefined' && Zotero && typeof Zotero.debug === 'function') Zotero.debug('Zotodo: zotodo.ts loaded') } catch (_e) { /* ignore */ }
+
+// Early evaluation log + global unhandled-rejection diagnostic
+try {
+  // Zotero may not be available super-early; guard access for logging
+  if (typeof Zotero !== 'undefined' && Zotero && typeof Zotero.debug === 'function') {
+    Zotero.debug('Zotodo: content script evaluated')
+  }
+
+  // Also capture unhandled rejections as early as possible with a fallback reporter
+  if (typeof (globalThis).addEventListener === 'function') {
+    (globalThis).addEventListener('unhandledrejection', (event) => {
+      try {
+        const r = event && event.reason
+        const txt = 'Zotodo: Unhandled promise rejection (early handler): ' + (r && (r.stack || r.message || String(r)))
+        if (typeof Zotero !== 'undefined' && Zotero && typeof Zotero.logError === 'function') Zotero.logError(txt)
+        try { Components.utils.reportError(txt) } catch (_e2) {}
+      }
+      catch (_e1) {}
+    })
+  }
+} catch (_e) { /* ignore */ }
