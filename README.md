@@ -35,3 +35,5 @@ Scaffolded with the wonderful
 - [ ] Set project by Zotero collection
 - [x] Add more template tokens
 - [ ] Switch to official Todoist API client
+
+
