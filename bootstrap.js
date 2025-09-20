@@ -7,8 +7,7 @@ var windowOpenObserver = null
 var chromeRegistered = false
 
 function log(msg) {
-  try { Components.utils.reportError(String(msg)) } catch (_e1) {}
-  try { if (typeof console !== 'undefined' && console && console.error) console.error(String(msg)) } catch (_e2) {}
+  try { if (typeof console !== 'undefined' && console && console.log) console.log(String(msg)) } catch (_e2) {}
   try {
     var cs = Cc['@mozilla.org/consoleservice;1'].getService(Ci.nsIConsoleService)
     cs.logStringMessage(String(msg))
@@ -22,20 +21,20 @@ function ensureContentStartedForWindow(win) {
     var loader = Cc['@mozilla.org/moz/jssubscript-loader;1'].getService(Ci.mozIJSSubScriptLoader)
     var loaded = false
     try {
-      // Load the content script into the window context so `Zotero` is defined
-      loader.loadSubScript('chrome://zotodo/content/zotodo.js', win, 'UTF-8')
-      loaded = true
-      log('Zotodo bootstrap: loaded content via chrome:// into window context')
+      if (rootURI) {
+        loader.loadSubScript(rootURI + 'content/zotodo.js', win, 'UTF-8')
+        loaded = true
+        log('Zotodo bootstrap: loaded content via rootURI into window context: ' + rootURI + 'content/zotodo.js')
+      }
     } catch (e1) {
-      log('Zotodo bootstrap: failed to load content via chrome:// URL: ' + e1)
+      log('Zotodo bootstrap: failed to load content via rootURI: ' + e1)
       try {
-        if (rootURI) {
-          loader.loadSubScript(rootURI + 'content/zotodo.js', win, 'UTF-8')
-          loaded = true
-          log('Zotodo bootstrap: loaded content via rootURI into window context: ' + rootURI + 'content/zotodo.js')
-        }
+        // Fallback to chrome URL if chrome.manifest registered it
+        loader.loadSubScript('chrome://zotodo/content/zotodo.js', win, 'UTF-8')
+        loaded = true
+        log('Zotodo bootstrap: loaded content via chrome:// into window context')
       } catch (e2) {
-        log('Zotodo bootstrap: failed to load content via rootURI: ' + e2)
+        log('Zotodo bootstrap: failed to load content via chrome:// URL: ' + e2)
       }
     }
 
@@ -104,26 +103,37 @@ function addMenus(win) {
       toolsItem.setAttribute('label', 'Zotodo Preferences (bootstrap)')
       toolsItem.addEventListener('command', function () {
         try {
-          if (chromeRegistered) {
-            if (win && win.Zotero && win.Zotero.Zotodo && typeof win.Zotero.Zotodo.openPreferenceWindow === 'function') {
-              win.Zotero.Zotodo.openPreferenceWindow()
-              return
-            }
-            ensureContentStartedForWindow(win)
-            if (win && win.Zotero && win.Zotero.Zotodo && typeof win.Zotero.Zotodo.openPreferenceWindow === 'function') {
-              win.Zotero.Zotodo.openPreferenceWindow()
-              return
-            }
+          // Try to open preferences via content code if available
+          if (win && win.Zotero && win.Zotero.Zotodo && typeof win.Zotero.Zotodo.openPreferenceWindow === 'function') {
+            win.Zotero.Zotodo.openPreferenceWindow()
+            return
           }
-          // Fallback: offer a simple prompt to set the Todoist API token so the add-on can function
+          ensureContentStartedForWindow(win)
+          if (win && win.Zotero && win.Zotero.Zotodo && typeof win.Zotero.Zotodo.openPreferenceWindow === 'function') {
+            win.Zotero.Zotodo.openPreferenceWindow()
+            return
+          }
+          // Fallback: offer simple prompts to set core preferences so the add-on can function
           try {
             var ps = Cc['@mozilla.org/prompter;1'].getService(Ci.nsIPromptService)
+            // 1) Token
             var tokenObj = { value: (win && win.Zotero && win.Zotero.Prefs ? win.Zotero.Prefs.get('extensions.zotodo.todoist_token', '') : '') }
             var ok = ps.prompt(win, 'Zotodo', 'Enter your Todoist API token:', tokenObj, null, {})
             if (ok && win && win.Zotero && win.Zotero.Prefs) {
               // Pass 'true' to write to the default branch so the value persists and is globally readable
               try { win.Zotero.Prefs.set('extensions.zotodo.todoist_token', tokenObj.value, true) } catch (_eSet) { win.Zotero.Prefs.set('extensions.zotodo.todoist_token', tokenObj.value) }
-              win.alert('Zotodo: Todoist API token saved.')
+              // 2) Project name
+              var currentProject = (function(){ try { return win.Zotero.Prefs.get('extensions.zotodo.project', true) } catch (_e) { try { return win.Zotero.Prefs.get('extensions.zotodo.project') } catch (_e2) { return '' } } })()
+              if (!currentProject || String(currentProject).trim() === '') currentProject = 'Reading Queue'
+              var projectObj = { value: String(currentProject) }
+              ps.prompt(win, 'Zotodo', 'Enter the Todoist project to use (will be created if missing):', projectObj, null, {})
+              try { win.Zotero.Prefs.set('extensions.zotodo.project', projectObj.value, true) } catch (_eSet2) { win.Zotero.Prefs.set('extensions.zotodo.project', projectObj.value) }
+              // 3) Optional section
+              var currentSection = (function(){ try { return win.Zotero.Prefs.get('extensions.zotodo.section', true) } catch (_e3) { try { return win.Zotero.Prefs.get('extensions.zotodo.section') } catch (_e4) { return '' } } })()
+              var sectionObj = { value: String(currentSection || '') }
+              ps.prompt(win, 'Zotodo', 'Enter a section within the project (optional):', sectionObj, null, {})
+              try { win.Zotero.Prefs.set('extensions.zotodo.section', sectionObj.value, true) } catch (_eSet3) { win.Zotero.Prefs.set('extensions.zotodo.section', sectionObj.value) }
+              win.alert('Zotodo: Preferences saved. You can change these later when the full preferences UI is available.')
               return
             }
           } catch (ePrompt) {
@@ -225,22 +235,7 @@ function startup(data, reason) {
           log('Zotodo bootstrap: derived rootURI from stack: ' + rootURI)
         }
       } catch (_e) {}
-      // With derived rootURI we can register chrome so chrome:// URLs work
-      try {
-        if (rootURI) {
-          var io = Cc['@mozilla.org/network/io-service;1'].getService(Ci.nsIIOService)
-          var base = io.newURI(rootURI) // base URI of the XPI (jar:file:///...xpi!/)
-          var aom = Cc['@mozilla.org/addons/addon-manager-startup;1'].getService(Ci.amIAddonManagerStartup)
-          // Try the base+entries signature
-          aom.registerChrome(base, [
-            ['content', 'zotodo', 'content/'],
-            ['locale', 'zotodo', 'en-US', 'locale/en-US/'],
-            ['skin', 'zotodo', 'default', 'skin/'],
-          ])
-          chromeRegistered = true
-          log('Zotodo bootstrap: registered chrome via base+entries')
-        }
-      } catch (eReg) { log('Zotodo bootstrap: chrome registration via base+entries failed: ' + eReg) }
+      // Do not attempt dynamic chrome registration; rely on chrome.manifest packaged in the XPI
       hookExistingWindows()
       observeWindowOpens()
       return
@@ -248,9 +243,9 @@ function startup(data, reason) {
     rootURI = data.resourceURI.spec // e.g., jar:file:///.../zotodo.xpi!/
     // Use the subscript loader via XPCOM to avoid importing Services.sys.mjs
     var loader = Cc['@mozilla.org/moz/jssubscript-loader;1'].getService(Ci.mozIJSSubScriptLoader)
-    try { Components.utils.reportError('Zotodo bootstrap: attempting to load content/zotodo.js (scoped)') } catch (_e) {}
+    log('Zotodo bootstrap: attempting to load content/zotodo.js (scoped)')
     loader.loadSubScript(rootURI + 'content/zotodo.js', scope, 'UTF-8')
-    try { Components.utils.reportError('Zotodo bootstrap: loaded content/zotodo.js (scoped)') } catch (_e) {}
+    log('Zotodo bootstrap: loaded content/zotodo.js (scoped)')
     var entry = (scope && typeof scope.startup === 'function') ? scope : (scope.ZotodoBundle || null)
 
     // Fallback: try loading into the bootstrap global if not found on the scoped load

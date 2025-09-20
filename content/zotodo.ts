@@ -98,6 +98,7 @@ class TaskData {
   public section_name: string = null
   public priority: number
   public label_names: string[]
+  public description: string = null
   constructor(
     contents: string,
     priority: number,
@@ -162,6 +163,7 @@ class TodoistAPI {
         project_id,
         priority: task_data.priority,
       }
+      if (task_data.description) createPayload.description = task_data.description
       if (label_ids.length > 0) createPayload.label_ids = label_ids
       if (section_id != null) createPayload.section_id = section_id
       if (task_data.due_string != null) createPayload.due_string = task_data.due_string
@@ -610,7 +612,7 @@ class Zotodo {
       if (!Number.isFinite(userPriority) || userPriority < 1 || userPriority > 4) userPriority = 1
       const priority: number = MAX_PRIORITY - userPriority
       const project_name_raw: any = getPref('project')
-      const project_name: string = (typeof project_name_raw === 'string' && project_name_raw.trim() !== '') ? project_name_raw : 'Inbox'
+      const project_name: string = (typeof project_name_raw === 'string' && project_name_raw.trim() !== '') ? project_name_raw : 'Reading Queue'
       const section_name_raw: any = getPref('section')
       const section_name: string = (typeof section_name_raw === 'string') ? section_name_raw : ''
 
@@ -709,6 +711,12 @@ class Zotodo {
       if (include_note) task_data.note = note_contents
       if (set_due) task_data.due_string = due_string
       if (section_name !== '') task_data.section_name = section_name
+      // Set description to the item's URL if available; fall back to DOI link if no URL but DOI present
+      if (url && url.trim() !== '') {
+        task_data.description = url.trim()
+      } else if (doi && String(doi).trim() !== '') {
+        task_data.description = 'https://doi.org/' + String(doi).trim()
+      }
 
       Zotero.debug('Zotodo: makeTaskForItem before createTask')
       await this.todoist.createTask(task_data)
@@ -838,6 +846,36 @@ export function startup({ version, rootURI: rtURI }: { version: string, rootURI:
     Zotero.debug(msg)
   }
   // Do not register a 'window' notifier in Zotero 8; bootstrap handles window/menu hooks.
+  // Try to register a Preferences pane in Zotero 7/8 unified settings
+  try {
+    const PP = (Zotero as any).PreferencePanes || (Zotero as any).Preferences || null
+    if (PP && typeof PP.register === 'function') {
+      try {
+        PP.register('zotodo', {
+          label: 'Zotodo',
+          // Register a legacy XUL prefpane document for unified preferences
+          pane: 'chrome://zotodo/content/prefs-pane.xhtml',
+          image: null,
+          onLoad: (_doc: any, _win: any) => {
+            try {
+              if ((Zotero as any).Zotodo?.Options?.updatePreferenceWindow) {
+                (Zotero as any).Zotodo.Options.updatePreferenceWindow('init-all')
+              }
+            } catch (_e) { /* ignore */ }
+          },
+          onSave: (_doc: any, _win: any) => {
+            // No-op: XUL bindings write prefs automatically
+          },
+        })
+        Zotero.debug('Zotodo: Preference pane registered with Zotero.PreferencePanes')
+      } catch (eReg) {
+        Zotero.debug('Zotodo: Preference pane registration failed: ' + (eReg && (eReg.message || String(eReg))))
+      }
+    } else {
+      Zotero.debug('Zotodo: PreferencePanes API not available; keeping Tools menu fallback')
+    }
+  } catch (_e) { /* ignore */ }
+
   Zotero.debug('Zotodo: startup complete.')
 }
 
